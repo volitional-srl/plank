@@ -1,36 +1,30 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Plank
 
-## Getting Started
+Plank is a minimal app for calculating good parquet floor layouts. It could also be used for tiling layouts on floors or walls.
 
-First, run the development server:
+## How to use
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Draw a surface to mm scale
+- Fill in your rectangular plank (or tile) size
+- Place and rotate your first plank on the surface
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Layout
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The app will then fill the surface with a layout by placing planks one at a time in row order. When starting a new row it will try to use the 'cut-off' from the previous row. It will keep track of all cut-offs made and reuse them if possible. There are rules that determines whether a cut-off can be re-used in a given position. These rules can be configured or turned off. 
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Checks
 
-## Learn More
+For a given layout the app can perform checks:
 
-To learn more about Next.js, take a look at the following resources:
+- Adjacent ends: Ends of planks on adjacent rows should not be close to each other (300mm threshold by default)
+- A cut plank should not be smaller than 10mm in length or width
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Stats
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+For a given layout the app can provide:
 
-## Deploy on Vercel
+- Number of planks required
+- Area of planks required
+- Area of surface
+- Percentage of plank area wasted
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
