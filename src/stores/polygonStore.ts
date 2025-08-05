@@ -8,12 +8,18 @@ export interface Point {
 export const $points = atom<Point[]>([]);
 export const $isComplete = atom<boolean>(false);
 export const $angleSnapEnabled = atom<boolean>(false);
+export const $gridSnapEnabled = atom<boolean>(false);
 export const $isShiftPressed = atom<boolean>(false);
 export const $mousePosition = atom<Point | null>(null);
 
 export const $isAngleSnapActive = computed(
   [$angleSnapEnabled, $isShiftPressed],
   (angleSnapEnabled, isShiftPressed) => angleSnapEnabled || isShiftPressed
+);
+
+export const $isGridSnapActive = computed(
+  [$gridSnapEnabled],
+  (gridSnapEnabled) => gridSnapEnabled
 );
 
 export const $polygonPath = computed($points, (points) => {
@@ -51,12 +57,23 @@ export const polygonActions = {
     $angleSnapEnabled.set(!$angleSnapEnabled.get());
   },
   
+  toggleGridSnap: () => {
+    $gridSnapEnabled.set(!$gridSnapEnabled.get());
+  },
+  
   setShiftPressed: (pressed: boolean) => {
     $isShiftPressed.set(pressed);
   },
   
   setMousePosition: (position: Point | null) => {
     $mousePosition.set(position);
+  },
+  
+  snapToGrid: (x: number, y: number, gridSize: number = 10): Point => {
+    return {
+      x: Math.round(x / gridSize) * gridSize,
+      y: Math.round(y / gridSize) * gridSize
+    };
   },
   
   snapToAngle: (x: number, y: number, previousPoint: Point): Point => {
@@ -72,5 +89,21 @@ export const polygonActions = {
       x: previousPoint.x + Math.cos(snappedAngle) * distance,
       y: previousPoint.y + Math.sin(snappedAngle) * distance
     };
+  },
+  
+  applySnapping: (x: number, y: number, previousPoint?: Point): Point => {
+    let point = { x, y };
+    
+    // Apply grid snapping first if enabled
+    if ($gridSnapEnabled.get()) {
+      point = polygonActions.snapToGrid(point.x, point.y);
+    }
+    
+    // Apply angle snapping if enabled and we have a previous point
+    if ((($angleSnapEnabled.get() || $isShiftPressed.get()) && previousPoint)) {
+      point = polygonActions.snapToAngle(point.x, point.y, previousPoint);
+    }
+    
+    return point;
   }
 };
