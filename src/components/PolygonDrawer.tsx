@@ -12,7 +12,11 @@ import {
   $isAngleSnapActive,
   $isGridSnapActive,
   $polygonPathClosed,
+  $polygonArea,
+  $polygonPerimeter,
+  $edgeLengths,
   polygonActions,
+  unitUtils,
   Point
 } from '../stores/polygonStore';
 
@@ -26,6 +30,9 @@ export default function PolygonDrawer() {
   const isAngleSnapActive = useStore($isAngleSnapActive);
   const isGridSnapActive = useStore($isGridSnapActive);
   const polygonPath = useStore($polygonPathClosed);
+  const polygonArea = useStore($polygonArea);
+  const polygonPerimeter = useStore($polygonPerimeter);
+  const edgeLengths = useStore($edgeLengths);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -124,7 +131,7 @@ export default function PolygonDrawer() {
                 Grid Snap
               </button>
               <span className="text-xs text-gray-500">
-                {gridSnapEnabled ? '10px' : 'OFF'}
+                {gridSnapEnabled ? '1000mm' : 'OFF'}
               </span>
             </div>
           </div>
@@ -146,6 +153,27 @@ export default function PolygonDrawer() {
             Clear
           </button>
         </div>
+        
+        {/* Measurements Panel */}
+        {points.length > 0 && (
+          <div className="mb-3 p-2 bg-white rounded-lg border">
+            <div className="flex items-center gap-6 text-sm">
+              <div className="text-gray-600">
+                <span className="font-medium">Points:</span> {points.length}
+              </div>
+              {points.length >= 2 && (
+                <div className="text-gray-600">
+                  <span className="font-medium">Perimeter:</span> {unitUtils.formatMm(polygonPerimeter)}
+                </div>
+              )}
+              {isComplete && polygonArea > 0 && (
+                <div className="text-gray-600">
+                  <span className="font-medium">Area:</span> {unitUtils.formatArea(polygonArea)}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         
         <p className="text-sm text-gray-600">
           {isComplete 
@@ -204,6 +232,37 @@ export default function PolygonDrawer() {
               strokeDasharray={isComplete ? "none" : "5,5"}
             />
           )}
+
+          {/* Edge Labels */}
+          {points.length >= 2 && edgeLengths.map((edge, index) => {
+            const midX = (edge.from.x + edge.to.x) / 2;
+            const midY = (edge.from.y + edge.to.y) / 2;
+            const dx = edge.to.x - edge.from.x;
+            const dy = edge.to.y - edge.from.y;
+            const angle = Math.atan2(dy, dx);
+            let textAngle = (angle * 180) / Math.PI;
+            
+            // Keep text readable by flipping it if it's upside down
+            if (textAngle > 90 || textAngle < -90) {
+              textAngle += 180;
+            }
+            
+            return (
+              <text
+                key={`edge-${index}`}
+                x={midX}
+                y={midY}
+                fontSize="10"
+                fill="#374151"
+                textAnchor="middle"
+                dominantBaseline="middle"
+                transform={`rotate(${textAngle} ${midX} ${midY})`}
+                className="select-none pointer-events-none"
+              >
+                {unitUtils.formatMm(edge.lengthMm)}
+              </text>
+            );
+          })}
 
           {points.length > 0 && !isComplete && mousePosition && (() => {
             const previewPoint = getPreviewPoint();
