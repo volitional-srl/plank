@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useRef, useEffect } from 'react';
-import { useStore } from '@nanostores/react';
+import { useRef, useEffect } from "react";
+import { useStore } from "@nanostores/react";
 import {
   $points,
   $isComplete,
@@ -15,10 +15,17 @@ import {
   $polygonArea,
   $polygonPerimeter,
   $edgeLengths,
+  $currentZoom,
+  $zoomTransform,
+  $canZoomIn,
+  $canZoomOut,
+  $isPanning,
+  $isSpacePressed,
+  ZOOM_LEVELS,
   polygonActions,
   unitUtils,
-  Point
-} from '../stores/polygonStore';
+  Point,
+} from "../stores/polygonStore";
 
 export default function PolygonDrawer() {
   const points = useStore($points);
@@ -33,62 +40,145 @@ export default function PolygonDrawer() {
   const polygonArea = useStore($polygonArea);
   const polygonPerimeter = useStore($polygonPerimeter);
   const edgeLengths = useStore($edgeLengths);
+  const currentZoom = useStore($currentZoom);
+  const zoomTransform = useStore($zoomTransform);
+  const canZoomIn = useStore($canZoomIn);
+  const canZoomOut = useStore($canZoomOut);
+  const isPanning = useStore($isPanning);
+  const isSpacePressed = useStore($isSpacePressed);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Shift') {
+      if (event.key === "Shift") {
         polygonActions.setShiftPressed(true);
+      } else if (event.key === " ") {
+        event.preventDefault();
+        polygonActions.setSpacePressed(true);
       }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.key === 'Shift') {
+      if (event.key === "Shift") {
         polygonActions.setShiftPressed(false);
+      } else if (event.key === " ") {
+        polygonActions.setSpacePressed(false);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    const handleWheel = (event: WheelEvent) => {
+      // Only zoom when mouse is over the SVG
+      const svg = svgRef.current;
+      if (!svg) return;
+
+      const rect = svg.getBoundingClientRect();
+      const mouseX = event.clientX;
+      const mouseY = event.clientY;
+
+      // Check if mouse is within SVG bounds
+      if (
+        mouseX >= rect.left &&
+        mouseX <= rect.right &&
+        mouseY >= rect.top &&
+        mouseY <= rect.bottom
+      ) {
+        event.preventDefault();
+
+        if (event.deltaY < 0) {
+          polygonActions.zoomIn();
+        } else {
+          polygonActions.zoomOut();
+        }
+      }
+    };
+
+    const handleGlobalMouseUp = () => {
+      polygonActions.stopPanning();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    window.addEventListener("mouseup", handleGlobalMouseUp);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
     };
-  }, []);
+  }, [isPanning]);
+
+  const handleSVGMouseDown = (event: React.MouseEvent<SVGSVGElement>) => {
+    // Check if middle mouse button or space+left click for panning
+    if (event.button === 1 || (event.button === 0 && isSpacePressed)) {
+      event.preventDefault();
+      polygonActions.startPanning(event.clientX, event.clientY);
+      return;
+    }
+  };
 
   const handleSVGMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
-    if (isComplete) return;
-    
     const svg = svgRef.current;
     if (!svg) return;
 
-    const rect = svg.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    // Handle panning
+    if (isPanning) {
+      polygonActions.updatePanning(event.clientX, event.clientY);
+      return;
+    }
 
-    polygonActions.setMousePosition({ x, y });
+    // Handle normal drawing mouse movement
+    if (isComplete) return;
+
+    const rect = svg.getBoundingClientRect();
+    const screenX = event.clientX - rect.left;
+    const screenY = event.clientY - rect.top;
+
+    // Convert screen coordinates to canvas coordinates
+    const canvasPoint = polygonActions.screenToCanvas(screenX, screenY);
+    polygonActions.setMousePosition(canvasPoint);
+  };
+
+  const handleSVGMouseUp = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (isPanning) {
+      polygonActions.stopPanning();
+      return;
+    }
   };
 
   const getPreviewPoint = (): Point | null => {
     if (!mousePosition) return mousePosition;
-    
-    const previousPoint = points.length > 0 ? points[points.length - 1] : undefined;
-    return polygonActions.applySnapping(mousePosition.x, mousePosition.y, previousPoint);
+
+    const previousPoint =
+      points.length > 0 ? points[points.length - 1] : undefined;
+    return polygonActions.applySnapping(
+      mousePosition.x,
+      mousePosition.y,
+      previousPoint,
+    );
   };
 
   const handleSVGClick = (event: React.MouseEvent<SVGSVGElement>) => {
-    if (isComplete) return;
-    
+    // Don't draw if in pan mode
+    if (isSpacePressed || isPanning || isComplete) return;
+
     const svg = svgRef.current;
     if (!svg) return;
 
     const rect = svg.getBoundingClientRect();
-    const rawX = event.clientX - rect.left;
-    const rawY = event.clientY - rect.top;
+    const screenX = event.clientX - rect.left;
+    const screenY = event.clientY - rect.top;
 
-    const previousPoint = points.length > 0 ? points[points.length - 1] : undefined;
-    const newPoint = polygonActions.applySnapping(rawX, rawY, previousPoint);
+    // Convert screen coordinates to canvas coordinates
+    const canvasPoint = polygonActions.screenToCanvas(screenX, screenY);
+    const previousPoint =
+      points.length > 0 ? points[points.length - 1] : undefined;
+    const newPoint = polygonActions.applySnapping(
+      canvasPoint.x,
+      canvasPoint.y,
+      previousPoint,
+    );
 
     polygonActions.addPoint(newPoint);
   };
@@ -97,7 +187,7 @@ export default function PolygonDrawer() {
     <div className="w-full h-full flex flex-col">
       <div className="bg-gray-100 p-4 border-b">
         <h2 className="text-xl font-semibold mb-3">Draw Your Surface</h2>
-        
+
         {/* Toolbar */}
         <div className="flex items-center gap-4 mb-3 p-2 bg-white rounded-lg border">
           <div className="flex items-center gap-4">
@@ -105,38 +195,95 @@ export default function PolygonDrawer() {
               <button
                 onClick={polygonActions.toggleAngleSnap}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  angleSnapEnabled 
-                    ? 'bg-green-100 text-green-800 border border-green-300' 
-                    : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
+                  angleSnapEnabled
+                    ? "bg-green-100 text-green-800 border border-green-300"
+                    : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
                 }`}
               >
-                <div className={`w-3 h-3 rounded-full ${angleSnapEnabled ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                <div
+                  className={`w-3 h-3 rounded-full ${angleSnapEnabled ? "bg-green-500" : "bg-gray-400"}`}
+                ></div>
                 Angle Snap
               </button>
               <span className="text-xs text-gray-500">
-                {angleSnapEnabled ? 'ON' : 'OFF'} {isShiftPressed && '(SHIFT held)'}
+                {angleSnapEnabled ? "ON" : "OFF"}{" "}
+                {isShiftPressed && "(SHIFT held)"}
               </span>
             </div>
-            
+
             <div className="flex items-center gap-2">
               <button
                 onClick={polygonActions.toggleGridSnap}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  gridSnapEnabled 
-                    ? 'bg-blue-100 text-blue-800 border border-blue-300' 
-                    : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
+                  gridSnapEnabled
+                    ? "bg-blue-100 text-blue-800 border border-blue-300"
+                    : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
                 }`}
               >
-                <div className={`w-3 h-3 rounded-sm ${gridSnapEnabled ? 'bg-blue-500' : 'bg-gray-400'}`}></div>
+                <div
+                  className={`w-3 h-3 rounded-sm ${gridSnapEnabled ? "bg-blue-500" : "bg-gray-400"}`}
+                ></div>
                 Grid Snap
               </button>
               <span className="text-xs text-gray-500">
-                {gridSnapEnabled ? '1000mm' : 'OFF'}
+                {gridSnapEnabled ? `100mm` : "OFF"}
               </span>
+            </div>
+
+            <div className="flex items-center gap-1 border-l border-gray-300 pl-4">
+              <button
+                onClick={polygonActions.zoomOut}
+                disabled={!canZoomOut}
+                className="p-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Zoom Out"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="M21 21l-4.35-4.35"></path>
+                  <line x1="8" y1="11" x2="14" y2="11"></line>
+                </svg>
+              </button>
+              <span className="text-xs text-gray-600 min-w-[3rem] text-center">
+                {Math.round(currentZoom * 100)}%
+              </span>
+              <button
+                onClick={polygonActions.zoomIn}
+                disabled={!canZoomIn}
+                className="p-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Zoom In"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="M21 21l-4.35-4.35"></path>
+                  <line x1="8" y1="11" x2="14" y2="11"></line>
+                  <line x1="11" y1="8" x2="11" y2="14"></line>
+                </svg>
+              </button>
+              <button
+                onClick={polygonActions.resetZoom}
+                className="text-xs text-gray-600 hover:text-gray-800 ml-1"
+                title="Reset Zoom"
+              >
+                Reset
+              </button>
             </div>
           </div>
         </div>
-        
+
         {/* Action Buttons */}
         <div className="flex gap-2 mb-2">
           <button
@@ -153,7 +300,7 @@ export default function PolygonDrawer() {
             Clear
           </button>
         </div>
-        
+
         {/* Measurements Panel */}
         {points.length > 0 && (
           <div className="mb-3 p-2 bg-white rounded-lg border">
@@ -163,150 +310,189 @@ export default function PolygonDrawer() {
               </div>
               {points.length >= 2 && (
                 <div className="text-gray-600">
-                  <span className="font-medium">Perimeter:</span> {unitUtils.formatMm(polygonPerimeter)}
+                  <span className="font-medium">Perimeter:</span>{" "}
+                  {unitUtils.formatMm(polygonPerimeter)}
                 </div>
               )}
               {isComplete && polygonArea > 0 && (
                 <div className="text-gray-600">
-                  <span className="font-medium">Area:</span> {unitUtils.formatArea(polygonArea)}
+                  <span className="font-medium">Area:</span>{" "}
+                  {unitUtils.formatArea(polygonArea)}
                 </div>
               )}
             </div>
           </div>
         )}
-        
+
         <p className="text-sm text-gray-600">
-          {isComplete 
+          {isComplete
             ? `Polygon complete with ${points.length} points`
             : `Click to add points (${points.length} added)${
-                isAngleSnapActive || isGridSnapActive 
+                isAngleSnapActive || isGridSnapActive
                   ? ` - ${[
-                      isAngleSnapActive && 'Angle snap',
-                      isGridSnapActive && 'Grid snap'
-                    ].filter(Boolean).join(' + ')} active`
-                  : ''
-              }`
-          }
+                      isAngleSnapActive && "Angle snap",
+                      isGridSnapActive && "Grid snap",
+                    ]
+                      .filter(Boolean)
+                      .join(" + ")} active`
+                  : ""
+              } - Hold SPACE to pan or use middle mouse button`}
         </p>
       </div>
-      
+
       <div className="flex-1 relative">
         <svg
           ref={svgRef}
-          className="w-full h-full border cursor-crosshair"
+          className={`w-full h-full border ${
+            isPanning
+              ? "cursor-grabbing"
+              : isSpacePressed
+                ? "cursor-grab"
+                : "cursor-crosshair"
+          }`}
           onClick={handleSVGClick}
+          onMouseDown={handleSVGMouseDown}
           onMouseMove={handleSVGMouseMove}
-          style={{ minHeight: '500px' }}
+          onMouseUp={handleSVGMouseUp}
+          style={{ minHeight: "500px" }}
         >
           {/* Grid Pattern */}
           {gridSnapEnabled && (
             <defs>
-              <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-                <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e5e7eb" strokeWidth="0.5"/>
+              <pattern
+                id="grid"
+                width="10"
+                height="10"
+                patternUnits="userSpaceOnUse"
+              >
+                <path
+                  d="M 10 0 L 0 0 0 10"
+                  fill="none"
+                  stroke="#e5e7eb"
+                  strokeWidth="0.5"
+                />
               </pattern>
             </defs>
           )}
-          
-          {/* Grid Background */}
-          {gridSnapEnabled && (
-            <rect width="100%" height="100%" fill="url(#grid)" />
-          )}
-          {points.map((point, index) => (
-            <circle
-              key={index}
-              cx={point.x}
-              cy={point.y}
-              r="4"
-              fill="#ef4444"
-              stroke="#ffffff"
-              strokeWidth="2"
-            />
-          ))}
-          
-          {points.length > 0 && (
-            <path
-              d={polygonPath}
-              fill={isComplete ? "rgba(59, 130, 246, 0.2)" : "none"}
-              stroke="#3b82f6"
-              strokeWidth="2"
-              strokeDasharray={isComplete ? "none" : "5,5"}
-            />
-          )}
 
-          {/* Edge Labels */}
-          {points.length >= 2 && edgeLengths.map((edge, index) => {
-            const midX = (edge.from.x + edge.to.x) / 2;
-            const midY = (edge.from.y + edge.to.y) / 2;
-            const dx = edge.to.x - edge.from.x;
-            const dy = edge.to.y - edge.from.y;
-            const angle = Math.atan2(dy, dx);
-            let textAngle = (angle * 180) / Math.PI;
-            
-            // Keep text readable by flipping it if it's upside down
-            if (textAngle > 90 || textAngle < -90) {
-              textAngle += 180;
-            }
-            
-            return (
+          {/* Content with zoom/pan transform */}
+          <g transform={zoomTransform}>
+            {/* Grid Background */}
+            {gridSnapEnabled && (
+              <rect
+                x="-1000"
+                y="-1000"
+                width="2000"
+                height="2000"
+                fill="url(#grid)"
+              />
+            )}
+            {points.map((point, index) => (
+              <circle
+                key={index}
+                cx={point.x}
+                cy={point.y}
+                r="4"
+                fill="#ef4444"
+                stroke="#ffffff"
+                strokeWidth="2"
+              />
+            ))}
+
+            {points.length > 0 && (
+              <path
+                d={polygonPath}
+                fill={isComplete ? "rgba(59, 130, 246, 0.2)" : "none"}
+                stroke="#3b82f6"
+                strokeWidth="2"
+                strokeDasharray={isComplete ? "none" : "5,5"}
+              />
+            )}
+
+            {/* Edge Labels */}
+            {points.length >= 2 &&
+              edgeLengths.map((edge, index) => {
+                const midX = (edge.from.x + edge.to.x) / 2;
+                const midY = (edge.from.y + edge.to.y) / 2;
+                const dx = edge.to.x - edge.from.x;
+                const dy = edge.to.y - edge.from.y;
+                const angle = Math.atan2(dy, dx);
+                let textAngle = (angle * 180) / Math.PI;
+
+                // Keep text readable by flipping it if it's upside down
+                if (textAngle > 90 || textAngle < -90) {
+                  textAngle += 180;
+                }
+
+                return (
+                  <text
+                    key={`edge-${index}`}
+                    x={midX}
+                    y={midY}
+                    fontSize="10"
+                    fill="#374151"
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    transform={`rotate(${textAngle} ${midX} ${midY})`}
+                    className="select-none pointer-events-none"
+                  >
+                    {unitUtils.formatMm(edge.lengthMm)}
+                  </text>
+                );
+              })}
+
+            {points.length > 0 &&
+              !isComplete &&
+              mousePosition &&
+              (() => {
+                const previewPoint = getPreviewPoint();
+                const lastPoint = points[points.length - 1];
+                const hasSnapping = isAngleSnapActive || isGridSnapActive;
+                const snapColor =
+                  isAngleSnapActive && isGridSnapActive
+                    ? "#8b5cf6"
+                    : isAngleSnapActive
+                      ? "#10b981"
+                      : isGridSnapActive
+                        ? "#3b82f6"
+                        : "#94a3b8";
+
+                return (
+                  <>
+                    <line
+                      x1={lastPoint.x}
+                      y1={lastPoint.y}
+                      x2={previewPoint?.x || mousePosition.x}
+                      y2={previewPoint?.y || mousePosition.y}
+                      stroke={snapColor}
+                      strokeWidth={hasSnapping ? "3" : "1"}
+                      strokeDasharray="3,3"
+                    />
+                    {previewPoint && (
+                      <circle
+                        cx={previewPoint.x}
+                        cy={previewPoint.y}
+                        r="3"
+                        fill={snapColor}
+                        opacity="0.7"
+                      />
+                    )}
+                  </>
+                );
+              })()}
+
+            {points.length > 0 && !isComplete && (
               <text
-                key={`edge-${index}`}
-                x={midX}
-                y={midY}
-                fontSize="10"
-                fill="#374151"
+                x={points[0].x}
+                y={points[0].y - 10}
+                fontSize="12"
+                fill="#666"
                 textAnchor="middle"
-                dominantBaseline="middle"
-                transform={`rotate(${textAngle} ${midX} ${midY})`}
-                className="select-none pointer-events-none"
               >
-                {unitUtils.formatMm(edge.lengthMm)}
+                Click here to close
               </text>
-            );
-          })}
-
-          {points.length > 0 && !isComplete && mousePosition && (() => {
-            const previewPoint = getPreviewPoint();
-            const lastPoint = points[points.length - 1];
-            const hasSnapping = isAngleSnapActive || isGridSnapActive;
-            const snapColor = isAngleSnapActive && isGridSnapActive ? "#8b5cf6" : 
-                             isAngleSnapActive ? "#10b981" : 
-                             isGridSnapActive ? "#3b82f6" : "#94a3b8";
-            
-            return (
-              <>
-                <line
-                  x1={lastPoint.x}
-                  y1={lastPoint.y}
-                  x2={previewPoint?.x || mousePosition.x}
-                  y2={previewPoint?.y || mousePosition.y}
-                  stroke={snapColor}
-                  strokeWidth={hasSnapping ? "3" : "1"}
-                  strokeDasharray="3,3"
-                />
-                {previewPoint && (
-                  <circle
-                    cx={previewPoint.x}
-                    cy={previewPoint.y}
-                    r="3"
-                    fill={snapColor}
-                    opacity="0.7"
-                  />
-                )}
-              </>
-            );
-          })()}
-          
-          {points.length > 0 && !isComplete && (
-            <text
-              x={points[0].x}
-              y={points[0].y - 10}
-              fontSize="12"
-              fill="#666"
-              textAnchor="middle"
-            >
-              Click here to close
-            </text>
-          )}
+            )}
+          </g>
         </svg>
       </div>
     </div>
