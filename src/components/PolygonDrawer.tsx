@@ -38,6 +38,15 @@ import {
   gridActions,
 } from "../stores/gridStore";
 
+// Plank store imports
+import {
+  $plankDimensions,
+  $planks,
+  $isPlacingPlank,
+  $previewPlank,
+  plankActions,
+} from "../stores/plankStore";
+
 export default function PolygonDrawer() {
   const points = useStore($points);
   const isComplete = useStore($isComplete);
@@ -57,6 +66,10 @@ export default function PolygonDrawer() {
   const canZoomOut = useStore($canZoomOut);
   const isPanning = useStore($isPanning);
   const isSpacePressed = useStore($isSpacePressed);
+  const plankDimensions = useStore($plankDimensions);
+  const planks = useStore($planks);
+  const isPlacingPlank = useStore($isPlacingPlank);
+  const previewPlank = useStore($previewPlank);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -139,19 +152,26 @@ export default function PolygonDrawer() {
       return;
     }
 
-    // Handle normal drawing mouse movement
-    if (isComplete) return;
-
     const rect = svg.getBoundingClientRect();
     const screenX = event.clientX - rect.left;
     const screenY = event.clientY - rect.top;
 
     // Convert screen coordinates to canvas coordinates
     const canvasPoint = cameraActions.screenToCanvas(screenX, screenY);
-    polygonActions.setMousePosition(canvasPoint);
+
+    // Handle plank placement preview
+    if (isPlacingPlank) {
+      plankActions.setPreviewPlank(canvasPoint, 0); // TODO: Add rotation control
+      return;
+    }
+
+    // Handle normal drawing mouse movement
+    if (!isComplete) {
+      polygonActions.setMousePosition(canvasPoint);
+    }
   };
 
-  const handleSVGMouseUp = (event: React.MouseEvent<SVGSVGElement>) => {
+  const handleSVGMouseUp = () => {
     if (isPanning) {
       cameraActions.stopPanning();
       return;
@@ -171,8 +191,8 @@ export default function PolygonDrawer() {
   };
 
   const handleSVGClick = (event: React.MouseEvent<SVGSVGElement>) => {
-    // Don't draw if in pan mode
-    if (isSpacePressed || isPanning || isComplete) return;
+    // Don't do anything if panning
+    if (isSpacePressed || isPanning) return;
 
     const svg = svgRef.current;
     if (!svg) return;
@@ -183,15 +203,25 @@ export default function PolygonDrawer() {
 
     // Convert screen coordinates to canvas coordinates
     const canvasPoint = cameraActions.screenToCanvas(screenX, screenY);
-    const previousPoint =
-      points.length > 0 ? points[points.length - 1] : undefined;
-    const newPoint = gridActions.applySnapping(
-      canvasPoint.x,
-      canvasPoint.y,
-      previousPoint,
-    );
 
-    polygonActions.addPoint(newPoint);
+    // Handle plank placement if in placing mode
+    if (isPlacingPlank) {
+      plankActions.placePlank(canvasPoint, 0); // Start with 0 rotation
+      return;
+    }
+
+    // Handle polygon drawing if not complete
+    if (!isComplete) {
+      const previousPoint =
+        points.length > 0 ? points[points.length - 1] : undefined;
+      const newPoint = gridActions.applySnapping(
+        canvasPoint.x,
+        canvasPoint.y,
+        previousPoint,
+      );
+
+      polygonActions.addPoint(newPoint);
+    }
   };
 
   return (
@@ -335,6 +365,65 @@ export default function PolygonDrawer() {
           </div>
         )}
 
+        {/* Plank Configuration Panel */}
+        <div className="mb-3 p-3 bg-white rounded-lg border">
+          <h3 className="text-sm font-semibold text-gray-800 mb-2">Plank Configuration</h3>
+          <div className="flex items-center gap-4 mb-3">
+            <div className="flex items-center gap-2">
+              <label htmlFor="plank-length" className="text-xs text-gray-600 min-w-[40px]">
+                Length:
+              </label>
+              <input
+                id="plank-length"
+                type="number"
+                value={plankDimensions.length}
+                onChange={(e) => plankActions.setPlankLength(Number(e.target.value))}
+                className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                min="100"
+                max="5000"
+                step="10"
+              />
+              <span className="text-xs text-gray-500">mm</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="plank-width" className="text-xs text-gray-600 min-w-[35px]">
+                Width:
+              </label>
+              <input
+                id="plank-width"
+                type="number"
+                value={plankDimensions.width}
+                onChange={(e) => plankActions.setPlankWidth(Number(e.target.value))}
+                className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                min="50"
+                max="1000"
+                step="5"
+              />
+              <span className="text-xs text-gray-500">mm</span>
+            </div>
+          </div>
+          
+          {isComplete && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={plankActions.startPlacingPlank}
+                disabled={isPlacingPlank}
+                className="px-3 py-2 bg-green-500 text-white text-sm rounded hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {isPlacingPlank ? "Click to Place Plank" : "Place First Plank"}
+              </button>
+              {planks.length > 0 && (
+                <button
+                  onClick={plankActions.clearPlanks}
+                  className="px-3 py-2 bg-orange-500 text-white text-sm rounded hover:bg-orange-600"
+                >
+                  Clear Planks ({planks.length})
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         <p className="text-sm text-gray-600">
           {isComplete
             ? `Polygon complete with ${points.length} points`
@@ -451,6 +540,43 @@ export default function PolygonDrawer() {
                   </text>
                 );
               })}
+
+            {/* Placed Planks */}
+            {planks.map((plank) => {
+              const pixelLength = plankActions.mmToPixels(plank.length);
+              const pixelWidth = plankActions.mmToPixels(plank.width);
+              
+              return (
+                <rect
+                  key={plank.id}
+                  x={plank.x - pixelLength / 2}
+                  y={plank.y - pixelWidth / 2}
+                  width={pixelLength}
+                  height={pixelWidth}
+                  fill="rgba(139, 69, 19, 0.7)"
+                  stroke="#8B4513"
+                  strokeWidth="1"
+                  transform={`rotate(${plank.rotation} ${plank.x} ${plank.y})`}
+                  className="select-none"
+                />
+              );
+            })}
+
+            {/* Preview Plank */}
+            {previewPlank && (
+              <rect
+                x={previewPlank.x - plankActions.mmToPixels(previewPlank.length) / 2}
+                y={previewPlank.y - plankActions.mmToPixels(previewPlank.width) / 2}
+                width={plankActions.mmToPixels(previewPlank.length)}
+                height={plankActions.mmToPixels(previewPlank.width)}
+                fill="rgba(139, 69, 19, 0.4)"
+                stroke="#8B4513"
+                strokeWidth="2"
+                strokeDasharray="5,5"
+                transform={`rotate(${previewPlank.rotation} ${previewPlank.x} ${previewPlank.y})`}
+                className="select-none pointer-events-none"
+              />
+            )}
 
             {points.length > 0 &&
               !isComplete &&
