@@ -42,6 +42,8 @@ import {
 import {
   $plankDimensions,
   $planks,
+  $spares,
+  $gaps,
   $isPlacingPlank,
   $previewPlank,
   plankActions,
@@ -68,9 +70,19 @@ export default function PolygonDrawer() {
   const isSpacePressed = useStore($isSpacePressed);
   const plankDimensions = useStore($plankDimensions);
   const planks = useStore($planks);
+  const spares = useStore($spares);
+  const gaps = useStore($gaps);
   const isPlacingPlank = useStore($isPlacingPlank);
   const previewPlank = useStore($previewPlank);
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Handle tessellation when first plank is placed
+  useEffect(() => {
+    if (planks.length === 1 && isComplete && points.length >= 3) {
+      // Trigger tessellation for the first plank
+      plankActions.generateTessellation(planks[0], points);
+    }
+  }, [planks, isComplete, points]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -422,6 +434,55 @@ export default function PolygonDrawer() {
               )}
             </div>
           )}
+          
+          {/* Spares and Gaps Information */}
+          {(spares.length > 0 || gaps.length > 0) && (
+            <div className="flex items-center gap-4 text-xs">
+              {spares.length > 0 && (
+                <div className="text-green-700">
+                  <span className="font-medium">Spares:</span> {spares.length} pieces
+                  {spares.map((spare, idx) => (
+                    <span key={spare.id} className="ml-1">
+                      {idx > 0 && ', '}{spare.length}mm
+                    </span>
+                  ))}
+                </div>
+              )}
+              {gaps.length > 0 && (
+                <div className="text-red-700">
+                  <span className="font-medium">Unfilled Gaps:</span> {gaps.length}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Color Legend */}
+          {planks.length > 0 && (
+            <div className="flex items-center gap-4 text-xs mt-2 p-2 bg-gray-50 rounded">
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-amber-800 rounded-sm"></div>
+                <span>Full Planks</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-orange-500 rounded-sm"></div>
+                <span>Cut Planks</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-purple-500 rounded-sm"></div>
+                <span>Shape-Cut Planks</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
+                <span>Spare Pieces</span>
+              </div>
+              {gaps.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 border-2 border-red-500 border-dashed rounded-sm bg-red-200"></div>
+                  <span>Gaps</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <p className="text-sm text-gray-600">
@@ -543,23 +604,101 @@ export default function PolygonDrawer() {
 
             {/* Placed Planks */}
             {planks.map((plank) => {
-              const pixelLength = plankActions.mmToPixels(plank.length);
-              const pixelWidth = plankActions.mmToPixels(plank.width);
+              const isSpare = plank.isSpare;
+              const isCut = plank.originalLength && plank.length < plank.originalLength;
+              const isArbitraryShape = plank.isArbitraryShape && plank.shape;
               
-              return (
-                <rect
-                  key={plank.id}
-                  x={plank.x - pixelLength / 2}
-                  y={plank.y - pixelWidth / 2}
-                  width={pixelLength}
-                  height={pixelWidth}
-                  fill="rgba(139, 69, 19, 0.7)"
-                  stroke="#8B4513"
-                  strokeWidth="1"
-                  transform={`rotate(${plank.rotation} ${plank.x} ${plank.y})`}
-                  className="select-none"
-                />
-              );
+              if (isArbitraryShape) {
+                // Render arbitrary shape as polygon
+                const rad = (plank.rotation * Math.PI) / 180;
+                const cos = Math.cos(rad);
+                const sin = Math.sin(rad);
+                
+                const worldPoints = plank.shape!.map(point => ({
+                  x: plank.x + (point.x * cos - point.y * sin),
+                  y: plank.y + (point.x * sin + point.y * cos)
+                }));
+                
+                const pathData = worldPoints
+                  .map((point, index) => 
+                    index === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`
+                  )
+                  .join(' ') + ' Z';
+                
+                return (
+                  <path
+                    key={plank.id}
+                    d={pathData}
+                    fill={isSpare ? "rgba(34, 197, 94, 0.7)" : "rgba(147, 51, 234, 0.7)"}
+                    stroke={isSpare ? "#22C55E" : "#8B5CF6"}
+                    strokeWidth="1"
+                    className="select-none"
+                  />
+                );
+              } else {
+                // Render regular rectangle
+                const pixelLength = plankActions.mmToPixels(plank.length);
+                const pixelWidth = plankActions.mmToPixels(plank.width);
+                
+                return (
+                  <rect
+                    key={plank.id}
+                    x={plank.x - pixelLength / 2}
+                    y={plank.y - pixelWidth / 2}
+                    width={pixelLength}
+                    height={pixelWidth}
+                    fill={isSpare ? "rgba(34, 197, 94, 0.7)" : isCut ? "rgba(251, 146, 60, 0.7)" : "rgba(139, 69, 19, 0.7)"}
+                    stroke={isSpare ? "#22C55E" : isCut ? "#F97316" : "#8B4513"}
+                    strokeWidth="1"
+                    transform={`rotate(${plank.rotation} ${plank.x} ${plank.y})`}
+                    className="select-none"
+                  />
+                );
+              }
+            })}
+
+            {/* Gap Indicators */}
+            {gaps.map((gap, index) => {
+              if (gap.isArbitraryShape && gap.shape) {
+                // Render arbitrary gap shape
+                const pathData = gap.shape
+                  .map((point, idx) => 
+                    idx === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`
+                  )
+                  .join(' ') + ' Z';
+                
+                return (
+                  <path
+                    key={`gap-${index}`}
+                    d={pathData}
+                    fill="rgba(239, 68, 68, 0.3)"
+                    stroke="#EF4444"
+                    strokeWidth="2"
+                    strokeDasharray="5,5"
+                    className="select-none"
+                  />
+                );
+              } else {
+                // Render rectangular gap
+                const pixelLength = plankActions.mmToPixels(gap.requiredLength);
+                const pixelWidth = plankActions.mmToPixels(gap.width);
+                
+                return (
+                  <rect
+                    key={`gap-${index}`}
+                    x={gap.x - pixelLength / 2}
+                    y={gap.y - pixelWidth / 2}
+                    width={pixelLength}
+                    height={pixelWidth}
+                    fill="rgba(239, 68, 68, 0.3)"
+                    stroke="#EF4444"
+                    strokeWidth="2"
+                    strokeDasharray="5,5"
+                    transform={`rotate(${gap.rotation} ${gap.x} ${gap.y})`}
+                    className="select-none"
+                  />
+                );
+              }
             })}
 
             {/* Preview Plank */}
