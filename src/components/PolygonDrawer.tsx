@@ -2,30 +2,41 @@
 
 import { useRef, useEffect } from "react";
 import { useStore } from "@nanostores/react";
+
+// Camera store imports
 import {
-  $points,
-  $isComplete,
-  $angleSnapEnabled,
-  $gridSnapEnabled,
-  $isShiftPressed,
-  $mousePosition,
-  $isAngleSnapActive,
-  $isGridSnapActive,
-  $polygonPathClosed,
-  $polygonArea,
-  $polygonPerimeter,
-  $edgeLengths,
   $currentZoom,
   $zoomTransform,
   $canZoomIn,
   $canZoomOut,
   $isPanning,
   $isSpacePressed,
-  ZOOM_LEVELS,
+  cameraActions,
+  type Point,
+} from "../stores/cameraStore";
+
+// Polygon store imports
+import {
+  $points,
+  $isComplete,
+  $mousePosition,
+  $polygonPathClosed,
+  $polygonArea,
+  $polygonPerimeter,
+  $edgeLengths,
   polygonActions,
   unitUtils,
-  Point,
 } from "../stores/polygonStore";
+
+// Grid store imports
+import {
+  $angleSnapEnabled,
+  $gridSnapEnabled,
+  $isShiftPressed,
+  $isAngleSnapActive,
+  $isGridSnapActive,
+  gridActions,
+} from "../stores/gridStore";
 
 export default function PolygonDrawer() {
   const points = useStore($points);
@@ -51,18 +62,18 @@ export default function PolygonDrawer() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Shift") {
-        polygonActions.setShiftPressed(true);
+        gridActions.setShiftPressed(true);
       } else if (event.key === " ") {
         event.preventDefault();
-        polygonActions.setSpacePressed(true);
+        cameraActions.setSpacePressed(true);
       }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key === "Shift") {
-        polygonActions.setShiftPressed(false);
+        gridActions.setShiftPressed(false);
       } else if (event.key === " ") {
-        polygonActions.setSpacePressed(false);
+        cameraActions.setSpacePressed(false);
       }
     };
 
@@ -85,15 +96,15 @@ export default function PolygonDrawer() {
         event.preventDefault();
 
         if (event.deltaY < 0) {
-          polygonActions.zoomIn();
+          cameraActions.zoomIn();
         } else {
-          polygonActions.zoomOut();
+          cameraActions.zoomOut();
         }
       }
     };
 
     const handleGlobalMouseUp = () => {
-      polygonActions.stopPanning();
+      cameraActions.stopPanning();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -113,7 +124,7 @@ export default function PolygonDrawer() {
     // Check if middle mouse button or space+left click for panning
     if (event.button === 1 || (event.button === 0 && isSpacePressed)) {
       event.preventDefault();
-      polygonActions.startPanning(event.clientX, event.clientY);
+      cameraActions.startPanning(event.clientX, event.clientY);
       return;
     }
   };
@@ -124,7 +135,7 @@ export default function PolygonDrawer() {
 
     // Handle panning
     if (isPanning) {
-      polygonActions.updatePanning(event.clientX, event.clientY);
+      cameraActions.updatePanning(event.clientX, event.clientY);
       return;
     }
 
@@ -136,13 +147,13 @@ export default function PolygonDrawer() {
     const screenY = event.clientY - rect.top;
 
     // Convert screen coordinates to canvas coordinates
-    const canvasPoint = polygonActions.screenToCanvas(screenX, screenY);
+    const canvasPoint = cameraActions.screenToCanvas(screenX, screenY);
     polygonActions.setMousePosition(canvasPoint);
   };
 
   const handleSVGMouseUp = (event: React.MouseEvent<SVGSVGElement>) => {
     if (isPanning) {
-      polygonActions.stopPanning();
+      cameraActions.stopPanning();
       return;
     }
   };
@@ -152,7 +163,7 @@ export default function PolygonDrawer() {
 
     const previousPoint =
       points.length > 0 ? points[points.length - 1] : undefined;
-    return polygonActions.applySnapping(
+    return gridActions.applySnapping(
       mousePosition.x,
       mousePosition.y,
       previousPoint,
@@ -171,10 +182,10 @@ export default function PolygonDrawer() {
     const screenY = event.clientY - rect.top;
 
     // Convert screen coordinates to canvas coordinates
-    const canvasPoint = polygonActions.screenToCanvas(screenX, screenY);
+    const canvasPoint = cameraActions.screenToCanvas(screenX, screenY);
     const previousPoint =
       points.length > 0 ? points[points.length - 1] : undefined;
-    const newPoint = polygonActions.applySnapping(
+    const newPoint = gridActions.applySnapping(
       canvasPoint.x,
       canvasPoint.y,
       previousPoint,
@@ -193,7 +204,7 @@ export default function PolygonDrawer() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <button
-                onClick={polygonActions.toggleAngleSnap}
+                onClick={gridActions.toggleAngleSnap}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   angleSnapEnabled
                     ? "bg-green-100 text-green-800 border border-green-300"
@@ -213,7 +224,7 @@ export default function PolygonDrawer() {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={polygonActions.toggleGridSnap}
+                onClick={gridActions.toggleGridSnap}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   gridSnapEnabled
                     ? "bg-blue-100 text-blue-800 border border-blue-300"
@@ -232,7 +243,7 @@ export default function PolygonDrawer() {
 
             <div className="flex items-center gap-1 border-l border-gray-300 pl-4">
               <button
-                onClick={polygonActions.zoomOut}
+                onClick={cameraActions.zoomOut}
                 disabled={!canZoomOut}
                 className="p-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Zoom Out"
@@ -254,7 +265,7 @@ export default function PolygonDrawer() {
                 {Math.round(currentZoom * 100)}%
               </span>
               <button
-                onClick={polygonActions.zoomIn}
+                onClick={cameraActions.zoomIn}
                 disabled={!canZoomIn}
                 className="p-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Zoom In"
@@ -274,7 +285,7 @@ export default function PolygonDrawer() {
                 </svg>
               </button>
               <button
-                onClick={polygonActions.resetZoom}
+                onClick={cameraActions.resetZoom}
                 className="text-xs text-gray-600 hover:text-gray-800 ml-1"
                 title="Reset Zoom"
               >
