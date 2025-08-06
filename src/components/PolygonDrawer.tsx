@@ -472,6 +472,10 @@ export default function PolygonDrawer() {
                 <span>Shape-Cut Planks</span>
               </div>
               <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-pink-500 rounded-sm"></div>
+                <span>Multi-Line Cut Planks</span>
+              </div>
+              <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
                 <span>Spare Pieces</span>
               </div>
@@ -607,6 +611,7 @@ export default function PolygonDrawer() {
               const isSpare = plank.isSpare;
               const isCut = plank.originalLength && plank.length < plank.originalLength;
               const isArbitraryShape = plank.isArbitraryShape && plank.shape;
+              const isMultiLineCut = plank.isMultiLineCut;
               
               if (isArbitraryShape) {
                 // Render arbitrary shape as polygon
@@ -624,16 +629,44 @@ export default function PolygonDrawer() {
                     index === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`
                   )
                   .join(' ') + ' Z';
+
+                // Determine fill color for arbitrary shapes
+                let fillColor, strokeColor;
+                if (isSpare) {
+                  fillColor = "rgba(34, 197, 94, 0.7)"; // Green
+                  strokeColor = "#22C55E";
+                } else if (isMultiLineCut) {
+                  fillColor = "rgba(236, 72, 153, 0.7)"; // Pink for multi-line cuts
+                  strokeColor = "#EC4899";
+                } else {
+                  fillColor = "rgba(147, 51, 234, 0.7)"; // Purple for regular shape cuts
+                  strokeColor = "#8B5CF6";
+                }
                 
                 return (
-                  <path
-                    key={plank.id}
-                    d={pathData}
-                    fill={isSpare ? "rgba(34, 197, 94, 0.7)" : "rgba(147, 51, 234, 0.7)"}
-                    stroke={isSpare ? "#22C55E" : "#8B5CF6"}
-                    strokeWidth="1"
-                    className="select-none"
-                  />
+                  <g key={plank.id}>
+                    <path
+                      d={pathData}
+                      fill={fillColor}
+                      stroke={strokeColor}
+                      strokeWidth="1"
+                      className="select-none"
+                    />
+                    {/* Render cut lines for multi-line cuts */}
+                    {isMultiLineCut && plank.cutLines && plank.cutLines.map((cutLine, lineIndex) => (
+                      <line
+                        key={`cutline-${lineIndex}`}
+                        x1={cutLine[0].x}
+                        y1={cutLine[0].y}
+                        x2={cutLine[1].x}
+                        y2={cutLine[1].y}
+                        stroke="#DC2626"
+                        strokeWidth="2"
+                        strokeDasharray="3,2"
+                        className="select-none"
+                      />
+                    ))}
+                  </g>
                 );
               } else {
                 // Render regular rectangle
