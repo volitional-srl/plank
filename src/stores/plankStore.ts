@@ -284,6 +284,14 @@ export const plankActions = {
     // Get the plank's rectangle corners
     const plankCorners = plankActions.getRectangleCorners(plank);
     
+    // Check if any part of the plank is actually inside the polygon
+    const insideCorners = plankCorners.filter(corner => 
+      plankActions.isPointInPolygon(corner, polygonPoints)
+    );
+    
+    // If no corners are inside, this plank shouldn't be placed at all
+    if (insideCorners.length === 0) return null;
+    
     // Clip the plank rectangle against the room polygon
     const clippedShape = plankActions.clipPolygonByPolygon(plankCorners, polygonPoints);
     
@@ -292,8 +300,15 @@ export const plankActions = {
     const clippedArea = plankActions.calculatePolygonArea(clippedShape);
     const originalArea = plank.length * plank.width * (MM_TO_PIXELS * MM_TO_PIXELS);
     
-    // Only accept if we retain at least 20% of the original area
-    if (clippedArea < originalArea * 0.2) return null;
+    // Only accept if we retain at least 30% of the original area and it's meaningful size
+    if (clippedArea < originalArea * 0.3 || clippedArea < 2500) return null; // 2500 px² ≈ 25cm²
+    
+    // Verify all clipped shape points are actually inside the polygon
+    const allPointsInside = clippedShape.every(point => 
+      plankActions.isPointInPolygon(point, polygonPoints)
+    );
+    
+    if (!allPointsInside) return null; // Shape extends outside polygon
     
     // Convert clipped shape to relative coordinates (relative to plank center)
     const rad = (plank.rotation * Math.PI) / 180;
@@ -338,6 +353,88 @@ export const plankActions = {
       isSpare: true,
       originalLength: originalPlank.originalLength || originalPlank.length,
     };
+  },
+
+  // Try to perform a clean linear cut along plank length
+  tryLinearCut: (plank: Plank, polygonPoints: Point[]): { fitted: Plank, spare?: Plank } | null => {
+    const lengthPx = plank.length * MM_TO_PIXELS;
+    const widthPx = plank.width * MM_TO_PIXELS;
+    
+    const rad = (plank.rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    
+    // Check if we can make a clean cut along the plank length direction
+    // Cast rays from both width edges of the plank along its length
+    const halfWidth = widthPx / 2;
+    const edges = [
+      { // Top edge
+        startX: plank.x - (lengthPx / 2) * cos - halfWidth * sin,
+        startY: plank.y - (lengthPx / 2) * sin + halfWidth * cos,
+        dirX: cos,
+        dirY: sin
+      },
+      { // Bottom edge
+        startX: plank.x - (lengthPx / 2) * cos + halfWidth * sin,
+        startY: plank.y - (lengthPx / 2) * sin - halfWidth * cos,
+        dirX: cos,
+        dirY: sin
+      }
+    ];
+    
+    let minIntersectionDistance = lengthPx;
+    let hasIntersection = false;
+    
+    for (const edge of edges) {
+      // Cast ray along plank length
+      for (let i = 0; i < polygonPoints.length; i++) {
+        const j = (i + 1) % polygonPoints.length;
+        const p1 = polygonPoints[i];
+        const p2 = polygonPoints[j];
+        
+        const intersection = plankActions.lineIntersection(
+          edge.startX, edge.startY,
+          edge.startX + lengthPx * edge.dirX, edge.startY + lengthPx * edge.dirY,
+          p1.x, p1.y, p2.x, p2.y
+        );
+        
+        if (intersection) {
+          const distance = Math.sqrt(
+            (intersection.x - edge.startX) ** 2 + (intersection.y - edge.startY) ** 2
+          );
+          if (distance > 50 && distance < minIntersectionDistance) { // Minimum 50px = 500mm
+            minIntersectionDistance = distance;
+            hasIntersection = true;
+          }
+        }
+      }
+    }
+    
+    if (!hasIntersection || minIntersectionDistance >= lengthPx * 0.95) {
+      return null; // No clean cut possible or cut would be too small
+    }
+    
+    // Check if this is truly an orthogonal cut by seeing if both edges hit at similar distances
+    const cutLengthMm = minIntersectionDistance * plankActions.pixelsToMm(1);
+    
+    // Verify the cut plank would fit inside the polygon
+    const testCutPlank: Plank = {
+      ...plank,
+      length: cutLengthMm,
+      x: plank.x - ((plank.length * MM_TO_PIXELS - minIntersectionDistance) / 2) * cos,
+      y: plank.y - ((plank.length * MM_TO_PIXELS - minIntersectionDistance) / 2) * sin,
+    };
+    
+    if (!plankActions.isPlankInPolygon(testCutPlank, polygonPoints)) {
+      return null; // Cut plank doesn't fit cleanly
+    }
+    
+    // Create the cut plank and spare
+    const { fitted, spare } = plankActions.cutPlank(plank, cutLengthMm);
+    fitted.x = testCutPlank.x;
+    fitted.y = testCutPlank.y;
+    
+    return { fitted, spare };
   },
 
   // Calculate the shape of a gap that needs to be filled
@@ -526,52 +623,39 @@ export const plankActions = {
           width: dimensions.width,
         };
         
+        // Check if plank center is inside polygon - if not, skip entirely
+        if (!plankActions.isPointInPolygon({x: plankX, y: plankY}, polygonPoints)) {
+          continue;
+        }
+        
         // Check if this plank fits completely inside the polygon
         if (plankActions.isPlankInPolygon(testPlank, polygonPoints)) {
           newPlanks.push(testPlank);
         } else {
-          // Try to fit the plank by cutting it to an arbitrary shape
-          const shapeCutPlank = plankActions.fitPlankByShapeCutting(testPlank, polygonPoints);
+          // Check if this is a clean orthogonal cut case first
+          const linearCutResult = plankActions.tryLinearCut(testPlank, polygonPoints);
           
-          if (shapeCutPlank) {
-            newPlanks.push(shapeCutPlank);
-            
-            // Create spare from the unused portion
-            const spare = plankActions.createSpareFromCut(testPlank, shapeCutPlank);
-            if (spare) {
-              newSpares.push(spare);
+          if (linearCutResult) {
+            // This is a clean linear cut - use it
+            newPlanks.push(linearCutResult.fitted);
+            if (linearCutResult.spare) {
+              newSpares.push(linearCutResult.spare);
             }
           } else {
-            // Try linear cutting as fallback
-            const intersectionDistance = plankActions.calculateIntersectionDistance(testPlank, polygonPoints);
+            // Try to fit the plank by cutting it to an arbitrary shape
+            const shapeCutPlank = plankActions.fitPlankByShapeCutting(testPlank, polygonPoints);
             
-            if (intersectionDistance !== null && intersectionDistance > 50) { // Minimum 50mm piece
-              const cutLengthMm = intersectionDistance * plankActions.pixelsToMm(1);
-              const { fitted, spare } = plankActions.cutPlank(testPlank, cutLengthMm);
+            if (shapeCutPlank) {
+              newPlanks.push(shapeCutPlank);
               
-              // Adjust position of fitted plank to align properly
-              const adjustX = ((cutLengthMm * MM_TO_PIXELS) - lengthPx) / 2;
-              fitted.x = testPlank.x + adjustX * cos;
-              fitted.y = testPlank.y + adjustX * sin;
-              
-              newPlanks.push(fitted);
-              newSpares.push(spare);
-            } else {
-              // Create a gap for this position (with arbitrary shape if needed)
-              const gapShape = plankActions.calculateGapShape(testPlank, polygonPoints);
-              
-              if (gapShape && gapShape.length >= 3) {
-                newGaps.push({
-                  x: plankX,
-                  y: plankY,
-                  rotation: rotation,
-                  requiredLength: dimensions.length,
-                  width: dimensions.width,
-                  shape: gapShape,
-                  isArbitraryShape: true,
-                });
+              // Create spare from the unused portion
+              const spare = plankActions.createSpareFromCut(testPlank, shapeCutPlank);
+              if (spare) {
+                newSpares.push(spare);
               }
             }
+            // If neither linear nor shape cutting works, don't create a gap
+            // This prevents gaps outside the polygon
           }
         }
       }
