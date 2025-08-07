@@ -1,4 +1,20 @@
 import { atom, computed } from "nanostores";
+import {
+  Point,
+  pixelsToMm,
+  clipPolygonByPolygon,
+  calculatePolygonArea,
+  isPointInRectangle,
+  isPointInPolygon,
+  isPointOnPolygonBoundary,
+  lineIntersection,
+} from "../lib/geometry";
+import {
+  doPlanksIntersect,
+  getPlankCorners,
+  isPlankInPolygon,
+  Plank,
+} from "@/lib/plank";
 
 /**
  * Plank layout rules:
@@ -12,31 +28,37 @@ import { atom, computed } from "nanostores";
  * - Each new row of planks must be offset by the previous row by a configurable minimum distance (defaults to 300mm).
  */
 
-export interface Point {
-  x: number;
-  y: number;
+// Debug logging configuration
+interface PlankLoggingConfig {
+  enabled: boolean;
+  level: "debug" | "trace";
 }
+
+const $plankLogging = atom<PlankLoggingConfig>({
+  enabled: false,
+  level: "debug",
+});
+
+const plankLog = {
+  debug: (message: string, ...args: unknown[]) => {
+    const config = $plankLogging.get();
+    if (config.enabled) {
+      console.debug(`[PLANK DEBUG] ${message}`, ...args);
+    }
+  },
+  trace: (message: string, ...args: unknown[]) => {
+    const config = $plankLogging.get();
+    if (config.enabled && config.level === "trace") {
+      console.debug(`[PLANK TRACE] ${message}`, ...args);
+    }
+  },
+};
 
 export interface PlankDimensions {
   length: number; // in mm
   width: number; // in mm
   gap: number; // fixed gap between planks in mm
   minRowOffset: number; // minimum offset between rows in mm
-}
-
-export interface Plank {
-  id: string;
-  x: number; // position in canvas coordinates
-  y: number;
-  rotation: number; // rotation in degrees
-  length: number; // in mm
-  width: number; // in mm
-  isSpare?: boolean; // true if this is a cut spare piece
-  originalLength?: number; // original length before cutting (for spares)
-  shape?: Point[]; // custom shape points if cut to arbitrary shape (relative to center)
-  isArbitraryShape?: boolean; // true if cut into non-rectangular shape
-  isMultiLineCut?: boolean; // true if created through multi-line cutting
-  cutLines?: Point[][]; // the cut lines used to create this plank (for visualization)
 }
 
 export interface Gap {
@@ -76,6 +98,17 @@ export const $plankCount = computed($planks, (planks) => planks.length);
 const MM_TO_PIXELS = 1 / 10; // 1px = 10mm
 
 export const plankActions = {
+  // Debug logging controls
+  enableDebugLogging: (enabled: boolean = true) => {
+    $plankLogging.set({ ...$plankLogging.get(), enabled });
+    plankLog.debug(`Debug logging ${enabled ? "enabled" : "disabled"}`);
+  },
+
+  setLogLevel: (level: "debug" | "trace") => {
+    $plankLogging.set({ ...$plankLogging.get(), level });
+    plankLog.debug(`Log level set to ${level}`);
+  },
+
   // Plank dimension management
   setPlankDimensions: (dimensions: PlankDimensions) => {
     $plankDimensions.set(dimensions);
@@ -153,284 +186,40 @@ export const plankActions = {
     };
   },
 
-  // Convert individual measurements
-  mmToPixels: (mm: number): number => mm * MM_TO_PIXELS,
-  pixelsToMm: (pixels: number): number => pixels / MM_TO_PIXELS,
-
-  // Sutherland-Hodgman polygon clipping algorithm
-  clipPolygonByPolygon: (
-    subjectPolygon: Point[],
-    clipPolygon: Point[],
-  ): Point[] => {
-    if (subjectPolygon.length === 0 || clipPolygon.length === 0) return [];
-
-    let outputList = [...subjectPolygon];
-
-    for (let i = 0; i < clipPolygon.length; i++) {
-      const clipVertex1 = clipPolygon[i];
-      const clipVertex2 = clipPolygon[(i + 1) % clipPolygon.length];
-
-      const inputList = outputList;
-      outputList = [];
-
-      if (inputList.length === 0) break;
-
-      let s = inputList[inputList.length - 1];
-
-      for (const e of inputList) {
-        if (plankActions.isInsideEdge(e, clipVertex1, clipVertex2)) {
-          if (!plankActions.isInsideEdge(s, clipVertex1, clipVertex2)) {
-            const intersection = plankActions.computeIntersection(
-              s,
-              e,
-              clipVertex1,
-              clipVertex2,
-            );
-            if (intersection) outputList.push(intersection);
-          }
-          outputList.push(e);
-        } else if (plankActions.isInsideEdge(s, clipVertex1, clipVertex2)) {
-          const intersection = plankActions.computeIntersection(
-            s,
-            e,
-            clipVertex1,
-            clipVertex2,
-          );
-          if (intersection) outputList.push(intersection);
-        }
-        s = e;
-      }
-    }
-
-    return outputList;
-  },
-
-  // Check if point is inside the edge (left side of directed line)
-  isInsideEdge: (point: Point, edgeStart: Point, edgeEnd: Point): boolean => {
-    return (
-      (edgeEnd.x - edgeStart.x) * (point.y - edgeStart.y) -
-        (edgeEnd.y - edgeStart.y) * (point.x - edgeStart.x) >=
-      0
-    );
-  },
-
-  // Compute intersection of two line segments
-  computeIntersection: (
-    p1: Point,
-    p2: Point,
-    p3: Point,
-    p4: Point,
-  ): Point | null => {
-    const denom = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
-    if (Math.abs(denom) < 1e-10) return null;
-
-    const t =
-      ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / denom;
-
-    return {
-      x: p1.x + t * (p2.x - p1.x),
-      y: p1.y + t * (p2.y - p1.y),
-    };
-  },
-
-  // Calculate polygon area (for checking if shape is valid)
-  calculatePolygonArea: (points: Point[]): number => {
-    if (points.length < 3) return 0;
-
-    let area = 0;
-    for (let i = 0; i < points.length; i++) {
-      const j = (i + 1) % points.length;
-      area += points[i].x * points[j].y;
-      area -= points[j].x * points[i].y;
-    }
-    return Math.abs(area) / 2;
-  },
-
-  // Get rectangle corners as polygon
-  getRectangleCorners: (plank: Plank): Point[] => {
-    const lengthPx = plank.length * MM_TO_PIXELS;
-    const widthPx = plank.width * MM_TO_PIXELS;
-    const halfLength = lengthPx / 2;
-    const halfWidth = widthPx / 2;
-
-    const rad = (plank.rotation * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-
-    return [
-      {
-        x: plank.x + (-halfLength * cos - -halfWidth * sin),
-        y: plank.y + (-halfLength * sin + -halfWidth * cos),
-      },
-      {
-        x: plank.x + (halfLength * cos - -halfWidth * sin),
-        y: plank.y + (halfLength * sin + -halfWidth * cos),
-      },
-      {
-        x: plank.x + (halfLength * cos - halfWidth * sin),
-        y: plank.y + (halfLength * sin + halfWidth * cos),
-      },
-      {
-        x: plank.x + (-halfLength * cos - halfWidth * sin),
-        y: plank.y + (-halfLength * sin + halfWidth * cos),
-      },
-    ];
-  },
-
-  // Check if two planks (rectangles) intersect using Separating Axis Theorem
-  // Returns true only for actual overlaps, not just edge-touching
-  doPlanksIntersect: (plankA: Plank, plankB: Plank): boolean => {
-    const cornersA = plankActions.getRectangleCorners(plankA);
-    const cornersB = plankActions.getRectangleCorners(plankB);
-
-    // Get the axes to test (perpendicular to edges of both rectangles)
-    const axes = [
-      // PlankA axes
-      { x: cornersA[1].x - cornersA[0].x, y: cornersA[1].y - cornersA[0].y },
-      { x: cornersA[2].x - cornersA[1].x, y: cornersA[2].y - cornersA[1].y },
-      // PlankB axes
-      { x: cornersB[1].x - cornersB[0].x, y: cornersB[1].y - cornersB[0].y },
-      { x: cornersB[2].x - cornersB[1].x, y: cornersB[2].y - cornersB[1].y },
-    ];
-
-    // Test each axis
-    for (const axis of axes) {
-      const length = Math.sqrt(axis.x * axis.x + axis.y * axis.y);
-      if (length === 0) continue;
-
-      const normalizedAxis = { x: axis.x / length, y: axis.y / length };
-
-      // Project both rectangles onto this axis
-      const projA = cornersA.map(
-        (corner) => corner.x * normalizedAxis.x + corner.y * normalizedAxis.y,
-      );
-      const projB = cornersB.map(
-        (corner) => corner.x * normalizedAxis.x + corner.y * normalizedAxis.y,
-      );
-
-      const minA = Math.min(...projA);
-      const maxA = Math.max(...projA);
-      const minB = Math.min(...projB);
-      const maxB = Math.max(...projB);
-
-      // Use a small tolerance to allow edge-touching but prevent overlaps
-      const tolerance = 0.1; // 0.1 pixel tolerance
-
-      // If projections don't overlap on this axis (with tolerance), rectangles don't intersect
-      if (maxA <= minB + tolerance || maxB <= minA + tolerance) {
-        return false;
-      }
-    }
-
-    // If we get here, rectangles intersect on all axes
-    return true;
-  },
-
-  // Check if a point is inside a rectangle (plank)
-  isPointInRectangle: (point: Point, plank: Plank): boolean => {
-    const corners = plankActions.getRectangleCorners(plank);
-
-    // Use the same ray casting algorithm but with the rectangle corners
-    let inside = false;
-    for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
-      const xi = corners[i].x;
-      const yi = corners[i].y;
-      const xj = corners[j].x;
-      const yj = corners[j].y;
-
-      if (
-        yi > point.y !== yj > point.y &&
-        point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi
-      ) {
-        inside = !inside;
-      }
-    }
-    return inside;
-  },
-
-  // Check if a point is inside a polygon using ray casting algorithm
-  isPointInPolygon: (point: Point, polygonPoints: Point[]): boolean => {
-    if (polygonPoints.length < 3) return false;
-
-    let inside = false;
-    for (
-      let i = 0, j = polygonPoints.length - 1;
-      i < polygonPoints.length;
-      j = i++
-    ) {
-      const xi = polygonPoints[i].x;
-      const yi = polygonPoints[i].y;
-      const xj = polygonPoints[j].x;
-      const yj = polygonPoints[j].y;
-
-      if (
-        yi > point.y !== yj > point.y &&
-        point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi
-      ) {
-        inside = !inside;
-      }
-    }
-    return inside;
-  },
-
-  // Check if a plank (as rectangle or arbitrary shape) is fully inside the polygon
-  isPlankInPolygon: (plank: Plank, polygonPoints: Point[]): boolean => {
-    let corners: Point[];
-
-    if (plank.isArbitraryShape && plank.shape) {
-      // Transform shape points to world coordinates
-      const rad = (plank.rotation * Math.PI) / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-
-      corners = plank.shape.map((point) => ({
-        x: plank.x + (point.x * cos - point.y * sin),
-        y: plank.y + (point.x * sin + point.y * cos),
-      }));
-    } else {
-      // Use rectangle corners
-      corners = plankActions.getRectangleCorners(plank);
-    }
-
-    // All corners must be inside the polygon
-    return corners.every((corner) =>
-      plankActions.isPointInPolygon(corner, polygonPoints),
-    );
-  },
-
   // Try to fit a plank by cutting it to an arbitrary shape
   fitPlankByShapeCutting: (
     plank: Plank,
     polygonPoints: Point[],
   ): Plank | null => {
+    plankLog.trace(`Attempting shape cutting for plank ${plank.id}`);
     // Get the plank's rectangle corners
-    const plankCorners = plankActions.getRectangleCorners(plank);
+    const plankCorners = getPlankCorners(plank);
 
     // Check if any part of the plank is actually inside the polygon
     const insideCorners = plankCorners.filter((corner) =>
-      plankActions.isPointInPolygon(corner, polygonPoints),
+      isPointInPolygon(corner, polygonPoints),
     );
 
     // Don't reject immediately - even if no corners are inside,
     // the plank could still intersect and create a valid shape-cut piece
 
     // Clip the plank rectangle against the room polygon
-    const clippedShape = plankActions.clipPolygonByPolygon(
-      plankCorners,
-      polygonPoints,
-    );
+    const clippedShape = clipPolygonByPolygon(plankCorners, polygonPoints);
 
     if (clippedShape.length < 3) {
+      plankLog.trace(
+        `Shape cutting: Clipped shape insufficient for plank ${plank.id} (${clippedShape.length} points)`,
+      );
       return null; // Not enough area
     }
 
-    const clippedArea = plankActions.calculatePolygonArea(clippedShape);
+    const clippedArea = calculatePolygonArea(clippedShape);
     const originalArea =
       plank.length * plank.width * (MM_TO_PIXELS * MM_TO_PIXELS);
     const areaRatio = clippedArea / originalArea;
 
     // Calculate polygon area to determine adaptive thresholds
-    const polygonArea = plankActions.calculatePolygonArea(polygonPoints);
+    const polygonArea = calculatePolygonArea(polygonPoints);
     const plankToPolygonRatio = originalArea / polygonArea;
 
     // Adaptive thresholds: smaller minimum area when plank is much larger than room
@@ -441,17 +230,27 @@ export const plankActions = {
       clippedArea < originalArea * minAreaRatio ||
       clippedArea < minAbsoluteArea
     ) {
+      plankLog.trace(
+        `Shape cutting: Area too small for plank ${plank.id} (${clippedArea.toFixed(1)}px² vs min ${minAbsoluteArea}px²)`,
+      );
       return null;
     }
 
     // Verify all clipped shape points are actually inside the polygon
     const allPointsInside = clippedShape.every((point) =>
-      plankActions.isPointInPolygon(point, polygonPoints),
+      isPointInPolygon(point, polygonPoints),
     );
 
     if (!allPointsInside) {
+      plankLog.trace(
+        `Shape cutting: Cut shape extends outside polygon for plank ${plank.id}`,
+      );
       return null; // Shape extends outside polygon
     }
+
+    plankLog.trace(
+      `Shape cutting: Valid cut shape created for plank ${plank.id} (${(areaRatio * 100).toFixed(1)}% of original)`,
+    );
 
     // Convert clipped shape to relative coordinates (relative to plank center)
     const rad = (plank.rotation * Math.PI) / 180;
@@ -482,8 +281,7 @@ export const plankActions = {
 
     const originalArea = originalPlank.length * originalPlank.width;
     const fittedArea =
-      plankActions.calculatePolygonArea(fittedPlank.shape) *
-      plankActions.pixelsToMm(1) ** 2;
+      calculatePolygonArea(fittedPlank.shape) * pixelsToMm(1) ** 2;
     const spareArea = originalArea - fittedArea;
 
     // Create a simplified spare (as a rectangle for now)
@@ -508,9 +306,10 @@ export const plankActions = {
     plank: Plank,
     polygonPoints: Point[],
   ): { fitted: Plank; spare?: Plank } | null => {
+    plankLog.trace(`Attempting multi-line cut for plank ${plank.id}`);
     const lengthPx = plank.length * MM_TO_PIXELS;
     const widthPx = plank.width * MM_TO_PIXELS;
-    const plankCorners = plankActions.getRectangleCorners(plank);
+    const plankCorners = getPlankCorners(plank);
 
     // Find all intersection points between plank edges and polygon edges
     const intersections: {
@@ -536,16 +335,7 @@ export const plankActions = {
         const p1 = polygonPoints[polyEdgeIdx];
         const p2 = polygonPoints[(polyEdgeIdx + 1) % polygonPoints.length];
 
-        const intersection = plankActions.lineIntersection(
-          corner1.x,
-          corner1.y,
-          corner2.x,
-          corner2.y,
-          p1.x,
-          p1.y,
-          p2.x,
-          p2.y,
-        );
+        const intersection = lineIntersection(corner1, corner2, p1, p2);
 
         if (intersection) {
           const distance = Math.sqrt(
@@ -563,8 +353,15 @@ export const plankActions = {
     }
 
     if (intersections.length < 2) {
+      plankLog.trace(
+        `Multi-line cut: Insufficient intersections (${intersections.length}) for plank ${plank.id}`,
+      );
       return null; // Need at least 2 intersections for a meaningful cut
     }
+
+    plankLog.trace(
+      `Multi-line cut: Found ${intersections.length} intersections for plank ${plank.id}`,
+    );
 
     // Sort intersections to create a logical cutting path
     intersections.sort(
@@ -592,8 +389,15 @@ export const plankActions = {
     }
 
     if (cutLines.length === 0) {
+      plankLog.trace(
+        `Multi-line cut: No valid cut lines found for plank ${plank.id}`,
+      );
       return null; // No valid cut lines found
     }
+
+    plankLog.trace(
+      `Multi-line cut: Generated ${cutLines.length} cut lines for plank ${plank.id}`,
+    );
 
     // Build the cut shape by tracing the polygon boundary and cut lines
     const cutShape = plankActions.buildMultiLineCutShape(
@@ -608,7 +412,7 @@ export const plankActions = {
     }
 
     // Validate cut shape area
-    const cutArea = plankActions.calculatePolygonArea(cutShape);
+    const cutArea = calculatePolygonArea(cutShape);
     const originalArea = lengthPx * widthPx;
 
     if (cutArea < originalArea * 0.15) {
@@ -640,7 +444,7 @@ export const plankActions = {
     const spareArea = originalArea - cutArea;
     const spare = plankActions.createSpareFromRemainingArea(plank, spareArea);
 
-    return { fitted: fittedPlank, spare };
+    return { fitted: fittedPlank, spare: spare || undefined };
   },
 
   // Build a complex cut shape from multiple cut lines
@@ -655,11 +459,11 @@ export const plankActions = {
       distance: number;
     }[],
   ): Point[] | null => {
-    const plankCorners = plankActions.getRectangleCorners(plank);
+    const plankCorners = getPlankCorners(plank);
 
     // Start with corners that are inside the polygon
     const insideCorners = plankCorners.filter((corner) =>
-      plankActions.isPointInPolygon(corner, polygonPoints),
+      isPointInPolygon(corner, polygonPoints),
     );
 
     if (insideCorners.length === 0) {
@@ -675,7 +479,7 @@ export const plankActions = {
     // Add intersection points that form the cutting boundary
     const boundaryIntersections = intersections.filter((int) => {
       // Only include intersections that lie on the polygon boundary
-      return plankActions.isPointOnPolygonBoundary(int.point, polygonPoints);
+      return isPointOnPolygonBoundary(int.point, polygonPoints);
     });
 
     boundaryIntersections.forEach((int) => shapePoints.push(int.point));
@@ -697,66 +501,6 @@ export const plankActions = {
     });
 
     return shapePoints;
-  },
-
-  // Check if a point lies on the polygon boundary
-  isPointOnPolygonBoundary: (
-    point: Point,
-    polygonPoints: Point[],
-    tolerance: number = 1,
-  ): boolean => {
-    for (let i = 0; i < polygonPoints.length; i++) {
-      const j = (i + 1) % polygonPoints.length;
-      const p1 = polygonPoints[i];
-      const p2 = polygonPoints[j];
-
-      const distance = plankActions.distanceFromPointToLineSegment(
-        point,
-        p1,
-        p2,
-      );
-      if (distance <= tolerance) {
-        return true;
-      }
-    }
-    return false;
-  },
-
-  // Calculate distance from point to line segment
-  distanceFromPointToLineSegment: (
-    point: Point,
-    lineStart: Point,
-    lineEnd: Point,
-  ): number => {
-    const A = point.x - lineStart.x;
-    const B = point.y - lineStart.y;
-    const C = lineEnd.x - lineStart.x;
-    const D = lineEnd.y - lineStart.y;
-
-    const dot = A * C + B * D;
-    const lenSq = C * C + D * D;
-
-    if (lenSq === 0) {
-      return Math.sqrt(A * A + B * B);
-    }
-
-    const param = dot / lenSq;
-
-    let xx, yy;
-    if (param < 0) {
-      xx = lineStart.x;
-      yy = lineStart.y;
-    } else if (param > 1) {
-      xx = lineEnd.x;
-      yy = lineEnd.y;
-    } else {
-      xx = lineStart.x + param * C;
-      yy = lineStart.y + param * D;
-    }
-
-    const dx = point.x - xx;
-    const dy = point.y - yy;
-    return Math.sqrt(dx * dx + dy * dy);
   },
 
   // Create spare from remaining area calculation
@@ -781,8 +525,8 @@ export const plankActions = {
     return {
       ...originalPlank,
       id: `${originalPlank.id}-spare-${Date.now()}`,
-      length: plankActions.pixelsToMm(spareLength),
-      width: plankActions.pixelsToMm(spareWidth),
+      length: pixelsToMm(spareLength),
+      width: pixelsToMm(spareWidth),
       isSpare: true,
       originalLength: originalPlank.originalLength || originalPlank.length,
     };
@@ -793,6 +537,7 @@ export const plankActions = {
     plank: Plank,
     polygonPoints: Point[],
   ): { fitted: Plank; spare?: Plank } | null => {
+    plankLog.trace(`Attempting linear cut for plank ${plank.id}`);
     const lengthPx = plank.length * MM_TO_PIXELS;
     const widthPx = plank.width * MM_TO_PIXELS;
 
@@ -806,7 +551,7 @@ export const plankActions = {
     const halfWidth = widthPx / 2;
 
     // Get the four corners of the plank to understand its orientation
-    const corners = plankActions.getRectangleCorners(plank);
+    const corners = getPlankCorners(plank);
 
     // Cast rays from the front edge of the plank towards the back
     const edges = [
@@ -837,15 +582,11 @@ export const plankActions = {
         const p2 = polygonPoints[j];
 
         // Find intersection between plank edge and polygon edge
-        const intersection = plankActions.lineIntersection(
-          edge.startX,
-          edge.startY,
-          edge.endX,
-          edge.endY,
-          p1.x,
-          p1.y,
-          p2.x,
-          p2.y,
+        const intersection = lineIntersection(
+          { x: edge.startX, y: edge.startY },
+          { x: edge.endX, y: edge.endY },
+          p1,
+          p2,
         );
 
         if (intersection) {
@@ -869,15 +610,19 @@ export const plankActions = {
     }
 
     if (!hasIntersection) {
+      plankLog.trace(`Linear cut: No intersection found for plank ${plank.id}`);
       return null; // No clean cut possible
     }
 
     if (minIntersectionDistance >= lengthPx * 0.95) {
+      plankLog.trace(
+        `Linear cut: Cut would be too small (${((minIntersectionDistance / lengthPx) * 100).toFixed(1)}%)`,
+      );
       return null; // Cut would be too small
     }
 
     // Check if this is truly an orthogonal cut by seeing if both edges hit at similar distances
-    const cutLengthMm = minIntersectionDistance * plankActions.pixelsToMm(1);
+    const cutLengthMm = minIntersectionDistance * pixelsToMm(1);
 
     // Verify the cut plank would fit inside the polygon
     const testCutPlank: Plank = {
@@ -891,7 +636,10 @@ export const plankActions = {
         ((plank.length * MM_TO_PIXELS - minIntersectionDistance) / 2) * sin,
     };
 
-    if (!plankActions.isPlankInPolygon(testCutPlank, polygonPoints)) {
+    if (!isPlankInPolygon(testCutPlank, polygonPoints)) {
+      plankLog.trace(
+        `Linear cut: Test cut plank doesn't fit cleanly in polygon`,
+      );
       return null; // Cut plank doesn't fit cleanly
     }
 
@@ -900,6 +648,9 @@ export const plankActions = {
     fitted.x = testCutPlank.x;
     fitted.y = testCutPlank.y;
 
+    plankLog.trace(
+      `Linear cut successful: fitted ${fitted.length}mm, spare ${spare.length}mm`,
+    );
     return { fitted, spare };
   },
 
@@ -907,11 +658,11 @@ export const plankActions = {
   calculateGapShape: (plank: Plank, polygonPoints: Point[]): Point[] | null => {
     // This is a simplified version - in reality, gap shapes are complex
     // For now, we'll represent gaps as the intersection of the plank area that's outside the room
-    const plankCorners = plankActions.getRectangleCorners(plank);
+    const plankCorners = getPlankCorners(plank);
 
     // Find which corners are outside the polygon
     const outsideCorners = plankCorners.filter(
-      (corner) => !plankActions.isPointInPolygon(corner, polygonPoints),
+      (corner) => !isPointInPolygon(corner, polygonPoints),
     );
 
     if (outsideCorners.length === 0) return null;
@@ -965,15 +716,14 @@ export const plankActions = {
         const p1 = polygonPoints[i];
         const p2 = polygonPoints[j];
 
-        const intersection = plankActions.lineIntersection(
-          rayStartX,
-          rayStartY,
-          rayStartX + lengthPx * lengthDirX,
-          rayStartY + lengthPx * lengthDirY,
-          p1.x,
-          p1.y,
-          p2.x,
-          p2.y,
+        const intersection = lineIntersection(
+          { x: rayStartX, y: rayStartY },
+          {
+            x: rayStartX + lengthPx * lengthDirX,
+            y: rayStartY + lengthPx * lengthDirY,
+          },
+          p1,
+          p2,
         );
 
         if (intersection) {
@@ -990,31 +740,7 @@ export const plankActions = {
   },
 
   // Line intersection helper
-  lineIntersection: (
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-    x3: number,
-    y3: number,
-    x4: number,
-    y4: number,
-  ): Point | null => {
-    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-    if (Math.abs(denom) < 1e-10) return null;
-
-    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
-    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
-
-    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-      return {
-        x: x1 + t * (x2 - x1),
-        y: y1 + t * (y2 - y1),
-      };
-    }
-
-    return null;
-  },
+  lineIntersection,
 
   // Cut a plank into two pieces
   cutPlank: (
@@ -1054,13 +780,27 @@ export const plankActions = {
 
   // Generate tessellation with proper row-based layout and configurable gaps
   generateTessellation: (firstPlank: Plank, polygonPoints: Point[]) => {
-    if (polygonPoints.length < 3) return;
+    plankLog.debug("=== Starting tessellation procedure ===");
+    plankLog.debug("First plank:", firstPlank);
+    plankLog.debug("Polygon points:", polygonPoints.length);
+
+    if (polygonPoints.length < 3) {
+      plankLog.debug("Insufficient polygon points, aborting tessellation");
+      return;
+    }
 
     const dimensions = $plankDimensions.get();
     const lengthPx = dimensions.length * MM_TO_PIXELS;
     const widthPx = dimensions.width * MM_TO_PIXELS;
     const gapPx = dimensions.gap * MM_TO_PIXELS;
     const minRowOffsetPx = dimensions.minRowOffset * MM_TO_PIXELS;
+
+    plankLog.debug("Tessellation configuration:", {
+      plankLength: dimensions.length,
+      plankWidth: dimensions.width,
+      gap: dimensions.gap,
+      minRowOffset: dimensions.minRowOffset,
+    });
 
     const newPlanks: Plank[] = [firstPlank];
     const newSpares: Plank[] = [];
@@ -1072,9 +812,13 @@ export const plankActions = {
     const minY = Math.min(...polygonPoints.map((p) => p.y));
     const maxY = Math.max(...polygonPoints.map((p) => p.y));
 
+    plankLog.debug("Polygon bounding box:", { minX, maxX, minY, maxY });
+
     const startX = firstPlank.x;
     const startY = firstPlank.y;
     const rotation = firstPlank.rotation;
+
+    plankLog.debug("Starting position:", { startX, startY, rotation });
 
     const rad = (rotation * Math.PI) / 180;
     const cos = Math.cos(rad);
@@ -1087,6 +831,7 @@ export const plankActions = {
     const rowSpacingY = (widthPx + gapPx) * cos;
 
     // Row-based tessellation (like real flooring)
+    plankLog.debug("Starting row-based tessellation");
     for (let rowIndex = -20; rowIndex <= 20; rowIndex++) {
       // Calculate optimal row offset (≥ minimum) to maximize spare reuse
       const offsetForThisRow = plankActions.calculateOptimalRowOffset(
@@ -1094,6 +839,10 @@ export const plankActions = {
         minRowOffsetPx,
         lengthPx + gapPx,
         newSpares,
+      );
+
+      plankLog.debug(
+        `Processing row ${rowIndex}, offset: ${offsetForThisRow}px`,
       );
 
       for (let plankInRow = -20; plankInRow <= 20; plankInRow++) {
@@ -1131,8 +880,15 @@ export const plankActions = {
           width: dimensions.width,
         };
 
+        plankLog.trace(
+          `Testing plank position: ${testPlank.id} at (${plankX.toFixed(1)}, ${plankY.toFixed(1)})`,
+        );
+
         // Check if plank overlaps with polygon
         if (!plankActions.plankOverlapsPolygon(testPlank, polygonPoints)) {
+          plankLog.trace(
+            `Plank ${testPlank.id} does not overlap polygon, skipping`,
+          );
           continue;
         }
 
@@ -1140,11 +896,14 @@ export const plankActions = {
         if (
           plankActions.plankCollidesWithExisting(testPlank, newPlanks, gapPx)
         ) {
+          plankLog.trace(`Plank ${testPlank.id} collides with existing planks`);
           continue;
         }
 
         // Try to place the plank - check for spare reuse first
         let plankPlaced = false;
+
+        plankLog.debug(`Attempting to place plank: ${testPlank.id}`);
 
         // First, try to use an existing spare piece if available
         const suitableSpare = plankActions.findSuitableSpare(
@@ -1155,6 +914,9 @@ export const plankActions = {
         if (suitableSpare) {
           const spareIndex = newSpares.indexOf(suitableSpare);
           if (spareIndex >= 0) {
+            plankLog.debug(
+              `Using spare piece (${suitableSpare.length}mm) for plank ${testPlank.id}`,
+            );
             newSpares.splice(spareIndex, 1);
             const sparePlank = {
               ...suitableSpare,
@@ -1164,15 +926,21 @@ export const plankActions = {
             };
             newPlanks.push(sparePlank);
             plankPlaced = true;
+          } else {
+            plankLog.trace(`No suitable spare found for plank ${testPlank.id}`);
           }
         }
 
         // If no suitable spare, try placing a full plank
         if (!plankPlaced) {
-          if (plankActions.isPlankInPolygon(testPlank, polygonPoints)) {
-            // Full plank fits completely
+          if (isPlankInPolygon(testPlank, polygonPoints)) {
+            plankLog.debug(`Full plank ${testPlank.id} fits completely`);
             newPlanks.push(testPlank);
             plankPlaced = true;
+          } else {
+            plankLog.trace(
+              `Full plank ${testPlank.id} does not fit in polygon, will try cutting`,
+            );
           }
         }
 
@@ -1183,11 +951,16 @@ export const plankActions = {
           // 2. Multi-line cut (multiple segments for complex shapes)
           // 3. Arbitrary shape cutting (fallback for any geometry)
 
+          plankLog.debug(`Trying cutting methods for plank ${testPlank.id}`);
+
           const linearCutResult = plankActions.tryLinearCut(
             testPlank,
             polygonPoints,
           );
           if (linearCutResult) {
+            plankLog.trace(
+              `Linear cut successful: ${linearCutResult.fitted.length}mm fitted, spare: ${linearCutResult.spare?.length || 0}mm`,
+            );
             // Check if linear cut plank fits with gaps
             if (
               !plankActions.plankCollidesWithExisting(
@@ -1196,12 +969,21 @@ export const plankActions = {
                 gapPx,
               )
             ) {
+              plankLog.debug(
+                `Linear cut plank ${testPlank.id} placed successfully`,
+              );
               newPlanks.push(linearCutResult.fitted);
               if (linearCutResult.spare) {
                 newSpares.push(linearCutResult.spare);
               }
               plankPlaced = true;
+            } else {
+              plankLog.trace(
+                `Linear cut plank ${testPlank.id} collision detected, trying next method`,
+              );
             }
+          } else {
+            plankLog.trace(`Linear cut failed for plank ${testPlank.id}`);
           }
 
           // If linear cut failed, try multi-line cutting
@@ -1211,18 +993,30 @@ export const plankActions = {
               polygonPoints,
             );
             if (multiLineCutResult) {
+              plankLog.trace(
+                `Multi-line cut successful for plank ${testPlank.id}, spare: ${multiLineCutResult.spare?.length || 0}mm`,
+              );
               // Check collision for multi-line cut planks
               const multiCutHasCollision = newPlanks.some((existingPlank) =>
-                plankActions.doPlanksIntersect(testPlank, existingPlank),
+                doPlanksIntersect(testPlank, existingPlank),
               );
 
               if (!multiCutHasCollision) {
+                plankLog.debug(
+                  `Multi-line cut plank ${testPlank.id} placed successfully`,
+                );
                 newPlanks.push(multiLineCutResult.fitted);
                 if (multiLineCutResult.spare) {
                   newSpares.push(multiLineCutResult.spare);
                 }
                 plankPlaced = true;
+              } else {
+                plankLog.trace(
+                  `Multi-line cut plank ${testPlank.id} collision detected`,
+                );
               }
+            } else {
+              plankLog.trace(`Multi-line cut failed for plank ${testPlank.id}`);
             }
           }
 
@@ -1233,12 +1027,18 @@ export const plankActions = {
               polygonPoints,
             );
             if (shapeCutPlank) {
+              plankLog.trace(
+                `Shape cutting successful for plank ${testPlank.id}`,
+              );
               // Check collision for shape-cut planks
               const shapeCutHasCollision = newPlanks.some((existingPlank) =>
-                plankActions.doPlanksIntersect(testPlank, existingPlank),
+                doPlanksIntersect(testPlank, existingPlank),
               );
 
               if (!shapeCutHasCollision) {
+                plankLog.debug(
+                  `Shape cut plank ${testPlank.id} placed successfully`,
+                );
                 newPlanks.push(shapeCutPlank);
 
                 // Create spare from the unused portion
@@ -1247,17 +1047,39 @@ export const plankActions = {
                   shapeCutPlank,
                 );
                 if (spare) {
+                  plankLog.trace(
+                    `Created spare (${spare.length}mm) from shape cut`,
+                  );
                   newSpares.push(spare);
                 }
                 plankPlaced = true;
+              } else {
+                plankLog.trace(
+                  `Shape cut plank ${testPlank.id} collision detected`,
+                );
               }
+            } else {
+              plankLog.trace(
+                `Shape cutting failed for plank ${testPlank.id} - no viable cut found`,
+              );
             }
           }
+        }
+
+        if (!plankPlaced) {
+          plankLog.trace(
+            `All placement methods failed for plank ${testPlank.id}`,
+          );
         }
       }
     }
 
+    plankLog.debug(
+      `Primary tessellation complete. Placed ${newPlanks.length} planks, created ${newSpares.length} spares`,
+    );
+
     // Secondary pass: Fill remaining gaps to ensure 100% coverage
+    plankLog.debug("Starting secondary gap-filling pass");
     plankActions.fillRemainingGaps(
       newPlanks,
       newSpares,
@@ -1269,6 +1091,11 @@ export const plankActions = {
       rotation,
     );
 
+    plankLog.debug(`=== Tessellation complete ===`);
+    plankLog.debug(
+      `Final result: ${newPlanks.length} planks placed, ${newSpares.length} spares available`,
+    );
+
     $planks.set(newPlanks);
     $spares.set(newSpares);
     $gaps.set([]);
@@ -1276,24 +1103,22 @@ export const plankActions = {
 
   // Helper: Check if plank overlaps with polygon
   plankOverlapsPolygon: (plank: Plank, polygonPoints: Point[]): boolean => {
-    const plankCorners = plankActions.getRectangleCorners(plank);
+    const plankCorners = getPlankCorners(plank);
 
     // Check if any plank corner is inside polygon
     const hasPointInside =
-      plankCorners.some((corner) =>
-        plankActions.isPointInPolygon(corner, polygonPoints),
-      ) ||
-      plankActions.isPointInPolygon({ x: plank.x, y: plank.y }, polygonPoints);
+      plankCorners.some((corner) => isPointInPolygon(corner, polygonPoints)) ||
+      isPointInPolygon({ x: plank.x, y: plank.y }, polygonPoints);
 
     // Check if any polygon vertex is inside plank
     const polygonInPlank = polygonPoints.some((point) =>
-      plankActions.isPointInRectangle(point, plank),
+      isPointInRectangle(point, plankCorners),
     );
 
     return hasPointInside || polygonInPlank;
   },
 
-  // Helper: Check if plank collides with existing planks (considering gaps)
+  /* Helper: Check if plank collides with existing planks (considering gaps) */
   plankCollidesWithExisting: (
     plank: Plank,
     existingPlanks: Plank[],
@@ -1303,11 +1128,11 @@ export const plankActions = {
       // Create expanded rectangles that include the gap
       const expandedExisting: Plank = {
         ...existing,
-        length: existing.length + plankActions.pixelsToMm(gapPx),
-        width: existing.width + plankActions.pixelsToMm(gapPx),
+        length: existing.length + pixelsToMm(gapPx),
+        width: existing.width + pixelsToMm(gapPx),
       };
 
-      return plankActions.doPlanksIntersect(plank, expandedExisting);
+      return doPlanksIntersect(plank, expandedExisting);
     });
   },
 
@@ -1383,7 +1208,7 @@ export const plankActions = {
       };
 
       // Check if spare fits completely in this position
-      if (plankActions.isPlankInPolygon(spareTestPlank, polygonPoints)) {
+      if (isPlankInPolygon(spareTestPlank, polygonPoints)) {
         return spare;
       }
     }
@@ -1468,10 +1293,7 @@ export const plankActions = {
         }
 
         // 2. Try full plank
-        if (
-          !placed &&
-          plankActions.isPlankInPolygon(testPlank, polygonPoints)
-        ) {
+        if (!placed && isPlankInPolygon(testPlank, polygonPoints)) {
           newPlanks.push(testPlank);
           placed = true;
         }
@@ -1495,6 +1317,11 @@ export const plankActions = {
               newSpares.push(linearCutResult.spare);
             }
             placed = true;
+          } else {
+            console.log(
+              `fillRemainingGaps: Linear cut not placed`,
+              linearCutResult?.fitted,
+            );
           }
         }
 
@@ -1506,7 +1333,7 @@ export const plankActions = {
           );
           if (multiLineCutResult) {
             const multiCutHasCollision = newPlanks.some((existingPlank) =>
-              plankActions.doPlanksIntersect(testPlank, existingPlank),
+              doPlanksIntersect(testPlank, existingPlank),
             );
 
             if (!multiCutHasCollision) {
@@ -1527,7 +1354,7 @@ export const plankActions = {
           );
           if (shapeCutPlank) {
             const shapeCutHasCollision = newPlanks.some((existingPlank) =>
-              plankActions.doPlanksIntersect(testPlank, existingPlank),
+              doPlanksIntersect(testPlank, existingPlank),
             );
 
             if (!shapeCutHasCollision) {

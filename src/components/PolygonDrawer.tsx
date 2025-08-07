@@ -48,6 +48,7 @@ import {
   $previewPlank,
   plankActions,
 } from "../stores/plankStore";
+import { mmToPixels } from "@/lib/geometry";
 
 export default function PolygonDrawer() {
   const points = useStore($points);
@@ -379,17 +380,24 @@ export default function PolygonDrawer() {
 
         {/* Plank Configuration Panel */}
         <div className="mb-3 p-3 bg-white rounded-lg border">
-          <h3 className="text-sm font-semibold text-gray-800 mb-2">Plank Configuration</h3>
+          <h3 className="text-sm font-semibold text-gray-800 mb-2">
+            Plank Configuration
+          </h3>
           <div className="flex items-center gap-4 mb-3">
             <div className="flex items-center gap-2">
-              <label htmlFor="plank-length" className="text-xs text-gray-600 min-w-[40px]">
+              <label
+                htmlFor="plank-length"
+                className="text-xs text-gray-600 min-w-[40px]"
+              >
                 Length:
               </label>
               <input
                 id="plank-length"
                 type="number"
                 value={plankDimensions.length}
-                onChange={(e) => plankActions.setPlankLength(Number(e.target.value))}
+                onChange={(e) =>
+                  plankActions.setPlankLength(Number(e.target.value))
+                }
                 className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 min="100"
                 max="5000"
@@ -398,14 +406,19 @@ export default function PolygonDrawer() {
               <span className="text-xs text-gray-500">mm</span>
             </div>
             <div className="flex items-center gap-2">
-              <label htmlFor="plank-width" className="text-xs text-gray-600 min-w-[35px]">
+              <label
+                htmlFor="plank-width"
+                className="text-xs text-gray-600 min-w-[35px]"
+              >
                 Width:
               </label>
               <input
                 id="plank-width"
                 type="number"
                 value={plankDimensions.width}
-                onChange={(e) => plankActions.setPlankWidth(Number(e.target.value))}
+                onChange={(e) =>
+                  plankActions.setPlankWidth(Number(e.target.value))
+                }
                 className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 min="50"
                 max="1000"
@@ -414,7 +427,7 @@ export default function PolygonDrawer() {
               <span className="text-xs text-gray-500">mm</span>
             </div>
           </div>
-          
+
           {isComplete && (
             <div className="flex items-center gap-2">
               <button
@@ -434,23 +447,26 @@ export default function PolygonDrawer() {
               )}
             </div>
           )}
-          
+
           {/* Spares and Gaps Information */}
           {(spares.length > 0 || gaps.length > 0) && (
             <div className="flex items-center gap-4 text-xs">
               {spares.length > 0 && (
                 <div className="text-green-700">
-                  <span className="font-medium">Spares:</span> {spares.length} pieces
+                  <span className="font-medium">Spares:</span> {spares.length}{" "}
+                  pieces
                   {spares.map((spare, idx) => (
                     <span key={spare.id} className="ml-1">
-                      {idx > 0 && ', '}{spare.length}mm
+                      {idx > 0 && ", "}
+                      {spare.length}mm
                     </span>
                   ))}
                 </div>
               )}
               {gaps.length > 0 && (
                 <div className="text-red-700">
-                  <span className="font-medium">Unfilled Gaps:</span> {gaps.length}
+                  <span className="font-medium">Unfilled Gaps:</span>{" "}
+                  {gaps.length}
                 </div>
               )}
             </div>
@@ -609,26 +625,30 @@ export default function PolygonDrawer() {
             {/* Placed Planks */}
             {planks.map((plank) => {
               const isSpare = plank.isSpare;
-              const isCut = plank.originalLength && plank.length < plank.originalLength;
+              const isCut =
+                plank.originalLength && plank.length < plank.originalLength;
               const isArbitraryShape = plank.isArbitraryShape && plank.shape;
               const isMultiLineCut = plank.isMultiLineCut;
-              
+
               if (isArbitraryShape) {
                 // Render arbitrary shape as polygon
                 const rad = (plank.rotation * Math.PI) / 180;
                 const cos = Math.cos(rad);
                 const sin = Math.sin(rad);
-                
-                const worldPoints = plank.shape!.map(point => ({
+
+                const worldPoints = plank.shape!.map((point) => ({
                   x: plank.x + (point.x * cos - point.y * sin),
-                  y: plank.y + (point.x * sin + point.y * cos)
+                  y: plank.y + (point.x * sin + point.y * cos),
                 }));
-                
-                const pathData = worldPoints
-                  .map((point, index) => 
-                    index === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`
-                  )
-                  .join(' ') + ' Z';
+
+                const pathData =
+                  worldPoints
+                    .map((point, index) =>
+                      index === 0
+                        ? `M ${point.x} ${point.y}`
+                        : `L ${point.x} ${point.y}`,
+                    )
+                    .join(" ") + " Z";
 
                 // Determine fill color for arbitrary shapes
                 let fillColor, strokeColor;
@@ -642,9 +662,9 @@ export default function PolygonDrawer() {
                   fillColor = "rgba(147, 51, 234, 0.7)"; // Purple for regular shape cuts
                   strokeColor = "#8B5CF6";
                 }
-                
+
                 return (
-                  <g key={plank.id}>
+                  <g key={plank.id} id={plank.id}>
                     <path
                       d={pathData}
                       fill={fillColor}
@@ -653,34 +673,43 @@ export default function PolygonDrawer() {
                       className="select-none"
                     />
                     {/* Render cut lines for multi-line cuts */}
-                    {isMultiLineCut && plank.cutLines && plank.cutLines.map((cutLine, lineIndex) => (
-                      <line
-                        key={`cutline-${lineIndex}`}
-                        x1={cutLine[0].x}
-                        y1={cutLine[0].y}
-                        x2={cutLine[1].x}
-                        y2={cutLine[1].y}
-                        stroke="#DC2626"
-                        strokeWidth="2"
-                        strokeDasharray="3,2"
-                        className="select-none"
-                      />
-                    ))}
+                    {isMultiLineCut &&
+                      plank.cutLines &&
+                      plank.cutLines.map((cutLine, lineIndex) => (
+                        <line
+                          key={`cutline-${lineIndex}`}
+                          x1={cutLine[0].x}
+                          y1={cutLine[0].y}
+                          x2={cutLine[1].x}
+                          y2={cutLine[1].y}
+                          stroke="#DC2626"
+                          strokeWidth="2"
+                          strokeDasharray="3,2"
+                          className="select-none"
+                        />
+                      ))}
                   </g>
                 );
               } else {
                 // Render regular rectangle
-                const pixelLength = plankActions.mmToPixels(plank.length);
-                const pixelWidth = plankActions.mmToPixels(plank.width);
-                
+                const pixelLength = mmToPixels(plank.length);
+                const pixelWidth = mmToPixels(plank.width);
+
                 return (
                   <rect
+                    id={plank.id}
                     key={plank.id}
                     x={plank.x - pixelLength / 2}
                     y={plank.y - pixelWidth / 2}
                     width={pixelLength}
                     height={pixelWidth}
-                    fill={isSpare ? "rgba(34, 197, 94, 0.7)" : isCut ? "rgba(251, 146, 60, 0.7)" : "rgba(139, 69, 19, 0.7)"}
+                    fill={
+                      isSpare
+                        ? "rgba(34, 197, 94, 0.7)"
+                        : isCut
+                          ? "rgba(251, 146, 60, 0.7)"
+                          : "rgba(139, 69, 19, 0.7)"
+                    }
                     stroke={isSpare ? "#22C55E" : isCut ? "#F97316" : "#8B4513"}
                     strokeWidth="1"
                     transform={`rotate(${plank.rotation} ${plank.x} ${plank.y})`}
@@ -694,12 +723,15 @@ export default function PolygonDrawer() {
             {gaps.map((gap, index) => {
               if (gap.isArbitraryShape && gap.shape) {
                 // Render arbitrary gap shape
-                const pathData = gap.shape
-                  .map((point, idx) => 
-                    idx === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`
-                  )
-                  .join(' ') + ' Z';
-                
+                const pathData =
+                  gap.shape
+                    .map((point, idx) =>
+                      idx === 0
+                        ? `M ${point.x} ${point.y}`
+                        : `L ${point.x} ${point.y}`,
+                    )
+                    .join(" ") + " Z";
+
                 return (
                   <path
                     key={`gap-${index}`}
@@ -713,9 +745,9 @@ export default function PolygonDrawer() {
                 );
               } else {
                 // Render rectangular gap
-                const pixelLength = plankActions.mmToPixels(gap.requiredLength);
-                const pixelWidth = plankActions.mmToPixels(gap.width);
-                
+                const pixelLength = mmToPixels(gap.requiredLength);
+                const pixelWidth = mmToPixels(gap.width);
+
                 return (
                   <rect
                     key={`gap-${index}`}
@@ -737,10 +769,10 @@ export default function PolygonDrawer() {
             {/* Preview Plank */}
             {previewPlank && (
               <rect
-                x={previewPlank.x - plankActions.mmToPixels(previewPlank.length) / 2}
-                y={previewPlank.y - plankActions.mmToPixels(previewPlank.width) / 2}
-                width={plankActions.mmToPixels(previewPlank.length)}
-                height={plankActions.mmToPixels(previewPlank.width)}
+                x={previewPlank.x - mmToPixels(previewPlank.length) / 2}
+                y={previewPlank.y - mmToPixels(previewPlank.width) / 2}
+                width={mmToPixels(previewPlank.length)}
+                height={mmToPixels(previewPlank.width)}
                 fill="rgba(139, 69, 19, 0.4)"
                 stroke="#8B4513"
                 strokeWidth="2"
