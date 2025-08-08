@@ -281,3 +281,77 @@ export const isPointInRectangle = (
   }
   return inside;
 };
+
+// Calculate intersection distance along a direction when a rectangle hits polygon edges
+export const calculateIntersectionDistance = (
+  center: Point,
+  lengthPx: number,
+  widthPx: number,
+  rotation: number,
+  polygonPoints: Point[],
+): number | null => {
+  const halfWidth = widthPx / 2;
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  const lengthDirX = cos;
+  const lengthDirY = sin;
+
+  const edges = [
+    {
+      startX: center.x - halfWidth * sin,
+      startY: center.y + halfWidth * cos,
+    },
+    {
+      startX: center.x + halfWidth * sin,
+      startY: center.y - halfWidth * cos,
+    },
+  ];
+
+  let minIntersectionDistance = lengthPx;
+
+  for (const edge of edges) {
+    const rayStartX = edge.startX - (lengthPx / 2) * lengthDirX;
+    const rayStartY = edge.startY - (lengthPx / 2) * lengthDirY;
+
+    for (let i = 0; i < polygonPoints.length; i++) {
+      const j = (i + 1) % polygonPoints.length;
+      const p1 = polygonPoints[i];
+      const p2 = polygonPoints[j];
+
+      const intersection = lineIntersection(
+        { x: rayStartX, y: rayStartY },
+        {
+          x: rayStartX + lengthPx * lengthDirX,
+          y: rayStartY + lengthPx * lengthDirY,
+        },
+        p1,
+        p2,
+      );
+
+      if (intersection) {
+        const distance = Math.sqrt(
+          (intersection.x - rayStartX) ** 2 +
+            (intersection.y - rayStartY) ** 2,
+        );
+        minIntersectionDistance = Math.min(minIntersectionDistance, distance);
+      }
+    }
+  }
+
+  return minIntersectionDistance < lengthPx ? minIntersectionDistance : null;
+};
+
+// Calculate the shape of a gap that needs to be filled
+export const calculateGapShape = (
+  rectangleCorners: Point[],
+  polygonPoints: Point[],
+): Point[] | null => {
+  const outsideCorners = rectangleCorners.filter(
+    (corner) => !isPointInPolygon(corner, polygonPoints),
+  );
+
+  if (outsideCorners.length === 0) return null;
+  return outsideCorners.length >= 3 ? outsideCorners : null;
+};

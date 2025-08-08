@@ -1,11 +1,13 @@
-import { MM_TO_PIXELS } from "@/stores/polygonStore";
+import type { Point } from "./geometry";
 import {
   doLinesIntersect,
   doRectanglesIntersect,
   isPointInPolygon,
   isPointInRectangle,
-  Point,
+  pixelsToMm,
 } from "./geometry";
+
+const MM_TO_PIXELS = 1 / 10;
 
 export interface Plank {
   id: string;
@@ -94,4 +96,132 @@ export const isPlankInPolygon = (
     }
   }
   return true;
+};
+
+// Check if plank overlaps with polygon
+export const plankOverlapsPolygon = (
+  plank: Plank,
+  polygonPoints: Point[],
+): boolean => {
+  const plankCorners = getPlankCorners(plank);
+
+  const hasPointInside =
+    plankCorners.some((corner) => isPointInPolygon(corner, polygonPoints)) ||
+    isPointInPolygon({ x: plank.x, y: plank.y }, polygonPoints);
+
+  const polygonInPlank = polygonPoints.some((point) =>
+    isPointInRectangle(point, plankCorners),
+  );
+
+  return hasPointInside || polygonInPlank;
+};
+
+// Check if plank collides with existing planks (considering gaps)
+export const plankCollidesWithExisting = (
+  plank: Plank,
+  existingPlanks: Plank[],
+  gapPx: number,
+): boolean => {
+  return existingPlanks.some((existing) => {
+    const expandedExisting: Plank = {
+      ...existing,
+      length: existing.length + pixelsToMm(gapPx),
+      width: existing.width + pixelsToMm(gapPx),
+    };
+
+    return doPlanksIntersect(plank, expandedExisting);
+  });
+};
+
+// Find a suitable spare piece for the current position
+export const findSuitableSpare = (
+  testPlank: Plank,
+  polygonPoints: Point[],
+  availableSpares: Plank[],
+): Plank | null => {
+  const sortedSpares = [...availableSpares].sort(
+    (a, b) => b.length - a.length,
+  );
+
+  for (const spare of sortedSpares) {
+    const spareTestPlank: Plank = {
+      ...testPlank,
+      length: spare.length,
+      width: spare.width,
+    };
+
+    if (isPlankInPolygon(spareTestPlank, polygonPoints)) {
+      return spare;
+    }
+  }
+
+  return null;
+};
+
+// Calculate optimal row offset to maximize spare reuse
+export const calculateOptimalRowOffset = (
+  rowIndex: number,
+  minOffsetPx: number,
+  fullPlankLengthPx: number,
+  availableSpares: Plank[],
+): number => {
+  if (Math.abs(rowIndex) <= 1) {
+    return (rowIndex * minOffsetPx) % fullPlankLengthPx;
+  }
+
+  let optimalOffset = (rowIndex * minOffsetPx) % fullPlankLengthPx;
+
+  if (availableSpares.length > 0) {
+    const spareLengths = availableSpares.map(
+      (spare) => spare.length * MM_TO_PIXELS,
+    );
+    const lengthCounts = new Map<number, number>();
+
+    spareLengths.forEach((length) => {
+      lengthCounts.set(length, (lengthCounts.get(length) || 0) + 1);
+    });
+
+    let mostCommonLength = 0;
+    let maxCount = 0;
+    for (const [length, count] of lengthCounts) {
+      if (count > maxCount) {
+        maxCount = count;
+        mostCommonLength = length;
+      }
+    }
+
+    if (mostCommonLength > 0 && maxCount >= 2) {
+      const spareBasedOffset = mostCommonLength;
+      if (spareBasedOffset >= minOffsetPx) {
+        optimalOffset = spareBasedOffset;
+      } else {
+        const multiplier = Math.ceil(minOffsetPx / spareBasedOffset);
+        optimalOffset = spareBasedOffset * multiplier;
+      }
+    }
+  }
+
+  return optimalOffset;
+};
+
+// Cut a plank into two pieces
+export const cutPlank = (
+  plank: Plank,
+  cutLengthMm: number,
+): { fitted: Plank; spare: Plank } => {
+  const fitted: Plank = {
+    ...plank,
+    id: `${plank.id}-fitted`,
+    length: cutLengthMm,
+  };
+
+  const spare: Plank = {
+    ...plank,
+    id: `${plank.id}-spare-${Date.now()}`,
+    length: plank.length - cutLengthMm,
+    isSpare: true,
+    originalLength: plank.originalLength || plank.length,
+  };
+
+  return { fitted, spare };
 };
