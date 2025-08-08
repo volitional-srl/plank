@@ -279,7 +279,7 @@ const fillRemainingGaps = (
   polygonPoints: Point[],
   dimensions: PlankDimensions,
   gapPx: number,
-  plankLog: { debug: (message: string, ...args: unknown[]) => void },
+  plankLog: { debug: (message: string, ...args: unknown[]) => void; trace: (message: string, ...args: unknown[]) => void },
 ) => {
   const lengthPx = dimensions.length * MM_TO_PIXELS;
   const widthPx = dimensions.width * MM_TO_PIXELS;
