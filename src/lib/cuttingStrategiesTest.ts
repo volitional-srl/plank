@@ -150,9 +150,21 @@ export const attemptCuttingStrategies = (
   expectedCutLines: Point[][] = [],
 ): CuttingResult => {
   const MM_TO_PIXELS = 1 / 10;
+  
+  console.log('=== Cutting Strategy Debug ===');
+  console.log('Plank:', testPlank);
+  console.log('Polygon points:', polygonPoints);
 
   // Try linear cut
+  console.log('Trying linear cut...');
   const linearCutResult = tryLinearCut(testPlank, polygonPoints);
+  console.log('Linear cut result:', linearCutResult);
+  
+  if (linearCutResult) {
+    const hasCollision = plankCollidesWithExisting(linearCutResult.fitted, existingPlanks, gapPx);
+    console.log('Linear cut collision check:', hasCollision);
+  }
+  
   if (
     linearCutResult &&
     !plankCollidesWithExisting(linearCutResult.fitted, existingPlanks, gapPx)
@@ -170,6 +182,7 @@ export const attemptCuttingStrategies = (
       polygonPoints,
     );
 
+    console.log('✅ Linear cut successful!');
     return {
       success: true,
       method: "linear",
@@ -185,7 +198,15 @@ export const attemptCuttingStrategies = (
   }
 
   // Try multi-line cut
+  console.log('Trying multi-line cut...');
   const multiLineCutResult = tryMultiLineCut(testPlank, polygonPoints);
+  console.log('Multi-line cut result:', multiLineCutResult);
+  
+  if (multiLineCutResult) {
+    const hasCollision = hasCollisionWithExisting(testPlank, existingPlanks);
+    console.log('Multi-line cut collision check:', hasCollision);
+  }
+  
   if (
     multiLineCutResult &&
     !hasCollisionWithExisting(testPlank, existingPlanks)
@@ -196,6 +217,7 @@ export const attemptCuttingStrategies = (
       expectedCutLines,
     );
 
+    console.log('✅ Multi-line cut successful!');
     return {
       success: true,
       method: "multi-line",
@@ -211,10 +233,19 @@ export const attemptCuttingStrategies = (
   }
 
   // Try shape cutting
+  console.log('Trying shape cutting...');
   const shapeCutPlank = fitPlankByShapeCutting(testPlank, polygonPoints);
+  console.log('Shape cut result:', shapeCutPlank);
+  
+  if (shapeCutPlank) {
+    const hasCollision = hasCollisionWithExisting(testPlank, existingPlanks);
+    console.log('Shape cut collision check:', hasCollision);
+  }
+  
   if (shapeCutPlank && !hasCollisionWithExisting(testPlank, existingPlanks)) {
     const spare = createSpareFromCut(testPlank, shapeCutPlank);
 
+    console.log('✅ Shape cut successful!');
     return {
       success: true,
       method: "shape",
@@ -235,6 +266,7 @@ export const attemptCuttingStrategies = (
     };
   }
 
+  console.log('❌ No cutting method succeeded');
   return {
     success: false,
     method: "none",
@@ -275,6 +307,31 @@ export const createTestScenarios = (): TestScenario[] => [
         { x: 350, y: 100 },
         { x: 350, y: 200 },
       ], // Vertical cut at polygon's right edge
+    ],
+  },
+  {
+    name: "Linear Cut - Rectangular room (left edge)",
+    polygon: [
+      { x: 100, y: 100 },
+      { x: 350, y: 100 },
+      { x: 350, y: 200 },
+      { x: 100, y: 200 },
+    ],
+    plank: {
+      id: "test-linear-left",
+      x: 150, // Plank center - should extend past x=100 (left edge)
+      y: 150, // Center vertically in polygon
+      rotation: 0,
+      length: 1200, // 1200mm - 120px when converted - extends 45px past left edge
+      width: 240, // 240mm - 24px when converted - fits within height
+    } as Plank,
+    expectedMethod: "linear" as const,
+    // Expected cut line: vertical line at x=100 (left edge of rectangle)
+    expectedCutLines: [
+      [
+        { x: 100, y: 100 },
+        { x: 100, y: 200 },
+      ], // Vertical cut at polygon's left edge
     ],
   },
   {

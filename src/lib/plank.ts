@@ -69,12 +69,15 @@ export const isPointOnPlank = (point: Point, plank: Plank): boolean => {
 };
 
 // Check if a plank (as rectangle or arbitrary shape) is fully inside the polygon
-// FIXME this doesnt work in all cases. Instead try to check edge intersections
 export const isPlankInPolygon = (
   plank: Plank,
   polygonPoints: Point[],
 ): boolean => {
   const corners = getPlankCorners(plank);
+
+  if (!corners.some((corner) => isPointInPolygon(corner, polygonPoints))) {
+    return false;
+  }
 
   // check for intersections between plank edges and polygon edges
   for (
@@ -95,6 +98,7 @@ export const isPlankInPolygon = (
       }
     }
   }
+
   return true;
 };
 
@@ -139,9 +143,7 @@ export const findSuitableSpare = (
   polygonPoints: Point[],
   availableSpares: Plank[],
 ): Plank | null => {
-  const sortedSpares = [...availableSpares].sort(
-    (a, b) => b.length - a.length,
-  );
+  const sortedSpares = [...availableSpares].sort((a, b) => b.length - a.length);
 
   for (const spare of sortedSpares) {
     const spareTestPlank: Plank = {

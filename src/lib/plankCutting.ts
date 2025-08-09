@@ -74,8 +74,10 @@ export const tryLinearCut = (
   plank: Plank,
   polygonPoints: Point[],
 ): { fitted: Plank; spare: Plank } | null => {
+  console.log("  📏 Linear cut: Calculating intersection distance...");
   const lengthPx = plank.length * MM_TO_PIXELS;
   const widthPx = plank.width * MM_TO_PIXELS;
+  console.log("  📏 Plank dimensions in pixels:", { lengthPx, widthPx });
 
   const intersectionDistance = calculateIntersectionDistance(
     { x: plank.x, y: plank.y },
@@ -85,35 +87,142 @@ export const tryLinearCut = (
     polygonPoints,
   );
 
+  console.log("  📏 Intersection distance:", intersectionDistance);
+  console.log("  📏 Length threshold (95%):", lengthPx * 0.95);
+
   if (!intersectionDistance || intersectionDistance >= lengthPx * 0.95) {
+    console.log(
+      "  ❌ Linear cut failed: No intersection or distance too large",
+    );
     return null;
   }
 
   const cutLengthMm = intersectionDistance * pixelsToMm(1);
+  console.log("  📏 Cut length in mm:", cutLengthMm);
+
+  // Try both positive and negative offsets to determine which side of plank to keep
+  const offsetMm = 5;
+  const offsetPx = offsetMm / pixelsToMm(1);
+
   const rad = (plank.rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
 
-  const testCutPlank: Plank = {
+  // Try negative offset first (cut from right/end side)
+  const negativeAdjustedDistance = intersectionDistance - offsetPx;
+  const negativeCutLengthMm = negativeAdjustedDistance * pixelsToMm(1);
+
+  const negativeTestPlank: Plank = {
     ...plank,
-    length: cutLengthMm,
+    length: negativeCutLengthMm,
     x:
       plank.x -
-      ((plank.length * MM_TO_PIXELS - intersectionDistance) / 2) * cos,
+      ((plank.length * MM_TO_PIXELS - negativeAdjustedDistance) / 2) * cos,
     y:
       plank.y -
-      ((plank.length * MM_TO_PIXELS - intersectionDistance) / 2) * sin,
+      ((plank.length * MM_TO_PIXELS - negativeAdjustedDistance) / 2) * sin,
   };
 
-  if (!isPlankInPolygon(testCutPlank, polygonPoints)) {
-    return null;
+  console.log("  📏 Trying negative offset:", {
+    negativeAdjustedDistance,
+    negativeTestPlank,
+  });
+
+  if (
+    negativeCutLengthMm > 0 &&
+    isPlankInPolygon(negativeTestPlank, polygonPoints)
+  ) {
+    console.log("  ✅ Negative offset works - using right/end side");
+
+    const fitted: Plank = {
+      ...plank,
+      id: `${plank.id}-fitted`,
+      length: negativeCutLengthMm,
+      x: negativeTestPlank.x,
+      y: negativeTestPlank.y,
+    };
+
+    const spareLength = plank.length - negativeCutLengthMm;
+    const spare: Plank = {
+      ...plank,
+      id: `${plank.id}-spare-${Date.now()}`,
+      length: spareLength,
+      x:
+        plank.x +
+        ((plank.length * MM_TO_PIXELS + negativeAdjustedDistance) / 2) * cos,
+      y:
+        plank.y +
+        ((plank.length * MM_TO_PIXELS + negativeAdjustedDistance) / 2) * sin,
+      isSpare: true,
+      originalLength: plank.originalLength || plank.length,
+    };
+
+    console.log("  ✅ Linear cut successful! (negative offset)", {
+      fitted,
+      spare,
+    });
+    return { fitted, spare };
   }
 
-  const { fitted, spare } = cutPlank(plank, cutLengthMm);
-  fitted.x = testCutPlank.x;
-  fitted.y = testCutPlank.y;
+  // Try positive offset (cut from left/start side)
+  const positiveAdjustedDistance = intersectionDistance + offsetPx;
+  const positiveCutLengthMm =
+    (plank.length * MM_TO_PIXELS - positiveAdjustedDistance) * pixelsToMm(1);
 
-  return { fitted, spare };
+  const positiveTestPlank: Plank = {
+    ...plank,
+    length: positiveCutLengthMm,
+    x:
+      plank.x +
+      ((plank.length * MM_TO_PIXELS - positiveAdjustedDistance) / 2) * cos,
+    y:
+      plank.y +
+      ((plank.length * MM_TO_PIXELS - positiveAdjustedDistance) / 2) * sin,
+  };
+
+  console.log("  📏 Trying positive offset:", {
+    positiveAdjustedDistance,
+    positiveTestPlank,
+  });
+
+  if (
+    positiveCutLengthMm > 0 &&
+    isPlankInPolygon(positiveTestPlank, polygonPoints)
+  ) {
+    console.log("  ✅ Positive offset works - using left/start side");
+
+    const fitted: Plank = {
+      ...plank,
+      id: `${plank.id}-fitted`,
+      length: positiveCutLengthMm,
+      x: positiveTestPlank.x,
+      y: positiveTestPlank.y,
+    };
+
+    const spareLength = plank.length - positiveCutLengthMm;
+    const spare: Plank = {
+      ...plank,
+      id: `${plank.id}-spare-${Date.now()}`,
+      length: spareLength,
+      x:
+        plank.x -
+        ((plank.length * MM_TO_PIXELS - positiveAdjustedDistance) / 2) * cos,
+      y:
+        plank.y -
+        ((plank.length * MM_TO_PIXELS - positiveAdjustedDistance) / 2) * sin,
+      isSpare: true,
+      originalLength: plank.originalLength || plank.length,
+    };
+
+    console.log("  ✅ Linear cut successful! (positive offset)", {
+      fitted,
+      spare,
+    });
+    return { fitted, spare };
+  }
+
+  console.log("  ❌ Linear cut failed: Neither offset produces valid plank");
+  return null;
 };
 
 // Try advanced multi-line cutting to create complex cut shapes
@@ -125,71 +234,102 @@ export const tryMultiLineCut = (
   const widthPx = plank.width * MM_TO_PIXELS;
   const plankCorners = getPlankCorners(plank);
 
-  const intersections: {
-    point: Point;
-    edge: number;
-    plankEdge: number;
-    distance: number;
+  // Find polygon edges that intersect with the plank
+  const intersectingEdges: {
+    edgeIndex: number;
+    edgeStart: Point;
+    edgeEnd: Point;
+    cutLine: Point[];
   }[] = [];
 
-  for (let plankEdgeIdx = 0; plankEdgeIdx < plankCorners.length; plankEdgeIdx++) {
-    const corner1 = plankCorners[plankEdgeIdx];
-    const corner2 = plankCorners[(plankEdgeIdx + 1) % plankCorners.length];
+  for (let polyEdgeIdx = 0; polyEdgeIdx < polygonPoints.length; polyEdgeIdx++) {
+    const p1 = polygonPoints[polyEdgeIdx];
+    const p2 = polygonPoints[(polyEdgeIdx + 1) % polygonPoints.length];
 
-    for (let polyEdgeIdx = 0; polyEdgeIdx < polygonPoints.length; polyEdgeIdx++) {
-      const p1 = polygonPoints[polyEdgeIdx];
-      const p2 = polygonPoints[(polyEdgeIdx + 1) % polygonPoints.length];
+    // Check if this polygon edge intersects with the plank
+    const plankBounds = {
+      minX: Math.min(...plankCorners.map((c) => c.x)),
+      maxX: Math.max(...plankCorners.map((c) => c.x)),
+      minY: Math.min(...plankCorners.map((c) => c.y)),
+      maxY: Math.max(...plankCorners.map((c) => c.y)),
+    };
 
-      const intersection = lineIntersection(corner1, corner2, p1, p2);
+    // Check if polygon edge overlaps with plank bounds
+    const edgeOverlapsX =
+      Math.max(Math.min(p1.x, p2.x), plankBounds.minX) <=
+      Math.min(Math.max(p1.x, p2.x), plankBounds.maxX);
+    const edgeOverlapsY =
+      Math.max(Math.min(p1.y, p2.y), plankBounds.minY) <=
+      Math.min(Math.max(p1.y, p2.y), plankBounds.maxY);
 
-      if (intersection) {
-        const distance = Math.sqrt(
-          (intersection.x - corner1.x) ** 2 +
-            (intersection.y - corner1.y) ** 2,
-        );
-        intersections.push({
-          point: intersection,
-          edge: polyEdgeIdx,
-          plankEdge: plankEdgeIdx,
-          distance,
+    if (edgeOverlapsX && edgeOverlapsY) {
+      // This polygon edge intersects the plank area
+      // Create a cut line along this edge (clipped to plank bounds)
+      let cutStart = p1;
+      let cutEnd = p2;
+
+      // For horizontal edges, clip to plank width
+      if (Math.abs(p1.y - p2.y) < 1) {
+        // Horizontal edge
+        cutStart = {
+          x: Math.max(Math.min(p1.x, p2.x), plankBounds.minX),
+          y: p1.y,
+        };
+        cutEnd = {
+          x: Math.min(Math.max(p1.x, p2.x), plankBounds.maxX),
+          y: p1.y,
+        };
+      }
+      // For vertical edges, clip to plank height
+      else if (Math.abs(p1.x - p2.x) < 1) {
+        // Vertical edge
+        cutStart = {
+          x: p1.x,
+          y: Math.max(Math.min(p1.y, p2.y), plankBounds.minY),
+        };
+        cutEnd = {
+          x: p1.x,
+          y: Math.min(Math.max(p1.y, p2.y), plankBounds.maxY),
+        };
+      }
+
+      // Only add if cut line has reasonable length
+      const cutLength = Math.sqrt(
+        (cutEnd.x - cutStart.x) ** 2 + (cutEnd.y - cutStart.y) ** 2,
+      );
+      if (cutLength > 5) {
+        intersectingEdges.push({
+          edgeIndex: polyEdgeIdx,
+          edgeStart: p1,
+          edgeEnd: p2,
+          cutLine: [cutStart, cutEnd],
         });
       }
     }
   }
 
-  if (intersections.length < 2) {
+  if (intersectingEdges.length < 2) {
     return null;
   }
 
-  intersections.sort(
-    (a, b) => a.plankEdge - b.plankEdge || a.distance - b.distance,
+  // Don't use multi-line cutting for simple cases that should be linear cuts
+  // If we only have edges in one direction (all horizontal or all vertical),
+  // it's probably a simple linear cut case
+  const hasHorizontalEdges = intersectingEdges.some(
+    (edge) => Math.abs(edge.edgeStart.y - edge.edgeEnd.y) < 1,
+  );
+  const hasVerticalEdges = intersectingEdges.some(
+    (edge) => Math.abs(edge.edgeStart.x - edge.edgeEnd.x) < 1,
   );
 
-  const cutLines: Point[][] = [];
-
-  for (let i = 0; i < intersections.length - 1; i++) {
-    const int1 = intersections[i];
-    const int2 = intersections[i + 1];
-
-    const segmentLength = Math.sqrt(
-      (int2.point.x - int1.point.x) ** 2 + (int2.point.y - int1.point.y) ** 2,
-    );
-
-    if (segmentLength > 20) {
-      cutLines.push([int1.point, int2.point]);
-    }
-  }
-
-  if (cutLines.length === 0) {
+  // If we only have edges going in one direction, it's likely a linear cut case
+  if (!(hasHorizontalEdges && hasVerticalEdges)) {
     return null;
   }
 
-  const cutShape = buildMultiLineCutShape(
-    plank,
-    polygonPoints,
-    cutLines,
-    intersections,
-  );
+  const cutLines = intersectingEdges.map((edge) => edge.cutLine);
+
+  const cutShape = buildMultiLineCutShape(plank, polygonPoints, cutLines, []);
 
   if (!cutShape || cutShape.length < 3) {
     return null;
