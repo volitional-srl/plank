@@ -97,6 +97,51 @@ export const tryLinearCut = (
     return null;
   }
 
+  // Check if this is a simple rectangular scenario suitable for linear cutting
+  // Linear cuts should only be used for simple cases where the plank extends past
+  // one edge of a simple polygon, not for complex shapes like L or H
+  const plankBounds = {
+    minX: plank.x - (lengthPx / 2),
+    maxX: plank.x + (lengthPx / 2),
+    minY: plank.y - (widthPx / 2),
+    maxY: plank.y + (widthPx / 2),
+  };
+  
+  // Count how many polygon edges the plank intersects with
+  let intersectingEdges = 0;
+  const tolerance = 1; // 1px tolerance for edge detection
+  
+  for (let i = 0; i < polygonPoints.length; i++) {
+    const p1 = polygonPoints[i];
+    const p2 = polygonPoints[(i + 1) % polygonPoints.length];
+    
+    // Expand edge bounds slightly for better detection
+    const edgeMinX = Math.min(p1.x, p2.x) - tolerance;
+    const edgeMaxX = Math.max(p1.x, p2.x) + tolerance;
+    const edgeMinY = Math.min(p1.y, p2.y) - tolerance;
+    const edgeMaxY = Math.max(p1.y, p2.y) + tolerance;
+    
+    // Check if polygon edge overlaps with plank bounds (with tolerance)
+    const edgeOverlapsX = Math.max(edgeMinX, plankBounds.minX) <= Math.min(edgeMaxX, plankBounds.maxX);
+    const edgeOverlapsY = Math.max(edgeMinY, plankBounds.minY) <= Math.min(edgeMaxY, plankBounds.maxY);
+    
+    if (edgeOverlapsX && edgeOverlapsY) {
+      console.log(`    📏 Edge ${i}: (${p1.x},${p1.y}) to (${p2.x},${p2.y}) intersects plank`);
+      intersectingEdges++;
+    } else {
+      console.log(`    📏 Edge ${i}: (${p1.x},${p1.y}) to (${p2.x},${p2.y}) does NOT intersect plank`);
+    }
+  }
+  
+  // If the plank intersects more than 1 edge, it's likely a complex shape that needs multi-line cutting
+  // Linear cuts should only be used for the simplest case: plank extending past exactly one polygon edge
+  if (intersectingEdges > 1) {
+    console.log(`  ❌ Linear cut failed: Too many intersecting edges (${intersectingEdges}), use multi-line cutting`);
+    return null;
+  }
+  
+  console.log(`  📏 Linear cut viable: Only ${intersectingEdges} intersecting edges`);
+
   const cutLengthMm = intersectionDistance * pixelsToMm(1);
   console.log("  📏 Cut length in mm:", cutLengthMm);
 
