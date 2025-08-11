@@ -99,23 +99,18 @@ export const runTessellationTest = (
   scenario: TessellationTestScenario
 ): TessellationTestResult => {
   console.log(`=== Running tessellation test: ${scenario.name} ===`);
-  
-  // Create logger for tessellation
-  const plankLog = {
-    debug: (message: string, ...args: unknown[]) => {
-      console.debug(`[TEST DEBUG] ${message}`, ...args);
-    },
-    trace: (message: string, ...args: unknown[]) => {
-      console.debug(`[TEST TRACE] ${message}`, ...args);
-    },
-  };
+  console.log("Test scenario details:", {
+    polygon: scenario.polygon,
+    firstPlank: scenario.firstPlank,
+    plankDimensions: scenario.plankDimensions,
+    expectedMetrics: scenario.expectedMetrics
+  });
   
   // Run tessellation
   const tessellationResult = generateTessellation(
     scenario.firstPlank,
     scenario.polygon,
-    scenario.plankDimensions,
-    plankLog
+    scenario.plankDimensions
   );
   
   const { planks, spares } = tessellationResult;
@@ -159,11 +154,30 @@ export const runTessellationTest = (
                            verification.coverageMatch && 
                            verification.wasteMatch;
   
-  console.log('Tessellation test results:', {
-    actualMetrics,
-    expectedMetrics: scenario.expectedMetrics,
-    verification
-  });
+  console.log('=== TESSELLATION TEST RESULTS ===');
+  console.log('Expected vs Actual:');
+  console.log(`  Total Planks: Expected ${scenario.expectedMetrics.totalPlanks}, Got ${actualMetrics.totalPlanks} ${verification.plankCountMatch ? '✅' : '❌'}`);
+  console.log(`  Cut Planks: Expected ${scenario.expectedMetrics.cutPlanks}, Got ${actualMetrics.cutPlanks} ${verification.cutPlankCountMatch ? '✅' : '❌'}`);
+  console.log(`  Full Planks: Expected ${scenario.expectedMetrics.fullPlanks}, Got ${actualMetrics.fullPlanks}`);
+  console.log(`  Spare Count: Expected ${scenario.expectedMetrics.spareCount}, Got ${actualMetrics.spareCount}`);
+  console.log(`  Coverage: Expected ${scenario.expectedMetrics.coveragePercentage}%, Got ${actualMetrics.coveragePercentage.toFixed(1)}% ${verification.coverageMatch ? '✅' : '❌'}`);
+  console.log(`  Waste Area: Expected ${scenario.expectedMetrics.wastedAreaMm2} mm², Got ${actualMetrics.wastedAreaMm2.toFixed(0)} mm² ${verification.wasteMatch ? '✅' : '❌'}`);
+  console.log(`Overall Result: ${verification.overallPass ? '✅ PASS' : '❌ FAIL'}`);
+  
+  if (!verification.overallPass) {
+    console.log('=== FAILURE ANALYSIS ===');
+    console.log('Placed planks details:', planks.map(p => ({
+      id: p.id,
+      type: p.type || 'full',
+      position: `(${p.x.toFixed(1)}, ${p.y.toFixed(1)})`,
+      dimensions: `${p.length}x${p.width}mm`
+    })));
+    console.log('Spare pieces:', spares.map(s => ({
+      id: s.id,
+      length: s.length,
+      area: calculatePlankAreaMm2(s).toFixed(0) + 'mm²'
+    })));
+  }
   
   return {
     scenario,
