@@ -35,7 +35,7 @@ export const generateTessellation = (
   logger.trace("Input parameters:", {
     firstPlank,
     dimensions,
-    polygonPoints: polygonPoints.length + " points"
+    polygonPoints: polygonPoints.length + " points",
   });
 
   if (polygonPoints.length < 3) {
@@ -52,7 +52,7 @@ export const generateTessellation = (
     lengthPx,
     widthPx,
     gapPx,
-    minRowOffsetPx
+    minRowOffsetPx,
   });
 
   const newPlanks: Plank[] = [firstPlank];
@@ -71,7 +71,7 @@ export const generateTessellation = (
     plankSpacingX,
     plankSpacingY,
     rowSpacingX,
-    rowSpacingY
+    rowSpacingY,
   });
 
   logger.debug("Starting row-based tessellation");
@@ -81,8 +81,10 @@ export const generateTessellation = (
   const polygonHeight = maxY - minY;
   const maxRowsNeeded = Math.ceil(polygonHeight / widthPx) + 2; // Add small buffer
   const maxPlanksNeeded = Math.ceil(polygonWidth / lengthPx) + 2; // Add small buffer
-  
-  logger.trace(`Search bounds: ${maxRowsNeeded} rows, ${maxPlanksNeeded} planks per row`);
+
+  logger.trace(
+    `Search bounds: ${maxRowsNeeded} rows, ${maxPlanksNeeded} planks per row`,
+  );
 
   for (let rowIndex = -maxRowsNeeded; rowIndex <= maxRowsNeeded; rowIndex++) {
     const offsetForThisRow = calculateOptimalRowOffset(
@@ -92,9 +94,16 @@ export const generateTessellation = (
       newSpares,
     );
 
-    logger.trace(`Processing row ${rowIndex} with offset ${offsetForThisRow.toFixed(2)}px`);
+    logger.trace(
+      `Processing row ${rowIndex} with offset ${offsetForThisRow.toFixed(2)}px`,
+    );
 
-    for (let plankInRow = -maxPlanksNeeded; plankInRow <= maxPlanksNeeded; plankInRow++) {
+    for (
+      let plankInRow = -maxPlanksNeeded;
+      plankInRow <= maxPlanksNeeded;
+      plankInRow++
+    ) {
+      if (rowIndex === 0 && plankInRow === 0) continue;
 
       const { plankX, plankY } = calculatePlankPosition(
         startX,
@@ -121,7 +130,9 @@ export const generateTessellation = (
           widthPx,
         )
       ) {
-        logger.trace(`Plank [${rowIndex},${plankInRow}] at (${plankX.toFixed(1)}, ${plankY.toFixed(1)}) is outside bounds`);
+        logger.trace(
+          `Plank [${rowIndex},${plankInRow}] at (${plankX.toFixed(1)}, ${plankY.toFixed(1)}) is outside bounds`,
+        );
         continue;
       }
 
@@ -135,15 +146,23 @@ export const generateTessellation = (
         plankInRow,
       );
 
-      logger.trace(`Testing plank ${testPlank.id} at (${plankX.toFixed(1)}, ${plankY.toFixed(1)})`);
+      logger.trace(
+        `Testing plank ${testPlank.id} at (${plankX.toFixed(1)}, ${plankY.toFixed(1)})`,
+      );
 
       if (!plankOverlapsPolygon(testPlank, polygonPoints)) {
-        logger.trace(`Plank ${testPlank.id} does not overlap polygon - skipping`);
+        logger.trace(
+          `Plank ${testPlank.id} does not overlap polygon - skipping`,
+        );
         continue;
       }
 
       if (plankCollidesWithExisting(testPlank, newPlanks, gapPx)) {
-        logger.trace(`Plank ${testPlank.id} collides with existing planks - skipping`);
+        logger.trace(
+          `🔴 Plank ${testPlank.id} collides with existing planks - skipping`,
+          testPlank,
+          newPlanks.slice(0),
+        );
         continue;
       }
 
@@ -155,11 +174,11 @@ export const generateTessellation = (
         newSpares,
         gapPx,
       );
-      
+
       if (placed) {
         logger.trace(`✅ Successfully placed plank ${testPlank.id}`);
       } else {
-        logger.trace(`❌ Failed to place plank ${testPlank.id}`);
+        logger.trace(`🔴 Failed to place plank ${testPlank.id}`);
       }
     }
   }
@@ -168,10 +187,23 @@ export const generateTessellation = (
   // fillRemainingGaps(newPlanks, newSpares, polygonPoints, dimensions, gapPx);
 
   logger.debug(`=== Tessellation complete ===`);
-  logger.debug(`Final results: ${newPlanks.length} planks placed, ${newSpares.length} spares created`);
-  logger.trace("Final planks:", newPlanks.map(p => ({ id: p.id, x: p.x.toFixed(1), y: p.y.toFixed(1), type: p.type })));
-  logger.trace("Final spares:", newSpares.map(s => ({ id: s.id, length: s.length })));
-  
+  logger.debug(
+    `Final results: ${newPlanks.length} planks placed, ${newSpares.length} spares created`,
+  );
+  logger.trace(
+    "Final planks:",
+    newPlanks.map((p) => ({
+      id: p.id,
+      x: p.x.toFixed(1),
+      y: p.y.toFixed(1),
+      type: p.type,
+    })),
+  );
+  logger.trace(
+    "Final spares:",
+    newSpares.map((s) => ({ id: s.id, length: s.length })),
+  );
+
   return { planks: newPlanks, spares: newSpares };
 };
 
@@ -285,22 +317,23 @@ const attemptPlankPlacement = (
   newSpares: Plank[],
   gapPx: number,
 ): boolean => {
-  logger.trace(`  Attempting placement for ${testPlank.id} - trying spare pieces first`);
-  
+  logger.trace(
+    `  Attempting placement for ${testPlank.id} - trying spare pieces first`,
+  );
+
   // Try using existing spare first
   const suitableSpare = findSuitableSpare(testPlank, polygonPoints, newSpares);
   if (suitableSpare) {
-    logger.trace(`  Found suitable spare piece for ${testPlank.id}: ${suitableSpare.length}mm`);
-    return applySparePiece(
-      testPlank,
-      suitableSpare,
-      newPlanks,
-      newSpares,
+    logger.trace(
+      `  Found suitable spare piece for ${testPlank.id}: ${suitableSpare.length}mm`,
     );
+    return applySparePiece(testPlank, suitableSpare, newPlanks, newSpares);
   }
 
-  logger.trace(`  No suitable spare found for ${testPlank.id}, trying full plank`);
-  
+  logger.trace(
+    `  No suitable spare found for ${testPlank.id}, trying full plank`,
+  );
+
   // Try full plank
   if (isPlankInPolygon(testPlank, polygonPoints)) {
     logger.debug(`  ✅ Full plank ${testPlank.id} fits completely - placing`);
@@ -308,7 +341,9 @@ const attemptPlankPlacement = (
     return true;
   }
 
-  logger.trace(`  Full plank ${testPlank.id} doesn't fit - trying cutting strategies`);
+  logger.trace(
+    `  Full plank ${testPlank.id} doesn't fit - trying cutting strategies`,
+  );
 
   // Try cutting strategies
   const cuttingResult = attemptCuttingStrategies(
@@ -318,13 +353,13 @@ const attemptPlankPlacement = (
     newSpares,
     gapPx,
   );
-  
+
   if (cuttingResult) {
     logger.trace(`  ✅ Cutting strategy succeeded for ${testPlank.id}`);
   } else {
     logger.trace(`  ❌ All cutting strategies failed for ${testPlank.id}`);
   }
-  
+
   return cuttingResult;
 };
 

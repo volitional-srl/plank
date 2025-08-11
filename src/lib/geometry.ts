@@ -219,8 +219,8 @@ export const doLinesIntersect = (
   return lineIntersection(point1, point2, point3, point4) !== null;
 };
 
-// Check if two rectangles intersect using Separating Axis Theorem
-// Returns true only for actual overlaps, not just edge-touching
+// Check if two rectangles overlap (interior intersection) using Separating Axis Theorem
+// Returns true only for actual overlaps with interior intersection, not just edge-touching
 export const doRectanglesIntersect = (
   cornersA: Point[],
   cornersB: Point[],
@@ -250,7 +250,9 @@ export const doRectanglesIntersect = (
     const minB = Math.min(...projB);
     const maxB = Math.max(...projB);
 
-    const tolerance = 0.1;
+    // Use smaller tolerance for true overlap detection (interior intersection)
+    // This allows edge-touching but prevents overlap
+    const tolerance = 1e-6;
 
     if (maxA <= minB + tolerance || maxB <= minA + tolerance) {
       return false;

@@ -127,10 +127,16 @@ export const plankCollidesWithExisting = (
   gapPx: number,
 ): boolean => {
   return existingPlanks.some((existing) => {
+    // If gap is 0, just check for overlap (no touching allowed to maintain 0 gap)
+    if (gapPx <= 0) {
+      return doPlanksIntersect(plank, existing);
+    }
+
+    // For positive gaps, expand the existing plank by the gap amount
     const expandedExisting: Plank = {
       ...existing,
-      length: existing.length + pixelsToMm(gapPx),
-      width: existing.width + pixelsToMm(gapPx),
+      length: existing.length + pixelsToMm(gapPx * 2), // Double gap to account for both sides
+      width: existing.width + pixelsToMm(gapPx * 2), // Double gap to account for both sides
     };
 
     return doPlanksIntersect(plank, expandedExisting);

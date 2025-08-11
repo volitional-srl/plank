@@ -17,6 +17,7 @@ interface PlankRendererProps {
 }
 
 export default function PlankRenderer({ planks, gaps, previewPlank }: PlankRendererProps) {
+
   return (
     <>
       {/* Placed Planks */}
@@ -34,8 +35,10 @@ export default function PlankRenderer({ planks, gaps, previewPlank }: PlankRende
                 fill={renderInfo.fillColor}
                 stroke={renderInfo.strokeColor}
                 strokeWidth="1"
-                className="select-none"
-              />
+                className="select-none cursor-pointer"
+              >
+                <title>{plank.id}</title>
+              </path>
               {/* Render cut lines for multi-line cuts */}
               {renderInfo.isMultiLineCut &&
                 plank.cutLines &&
@@ -69,8 +72,10 @@ export default function PlankRenderer({ planks, gaps, previewPlank }: PlankRende
               stroke={renderInfo.strokeColor}
               strokeWidth="1"
               transform={`rotate(${plank.rotation} ${plank.x} ${plank.y})`}
-              className="select-none"
-            />
+              className="select-none cursor-pointer"
+            >
+              <title>{plank.id}</title>
+            </rect>
           );
         }
       })}
