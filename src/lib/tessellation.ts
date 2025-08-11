@@ -86,102 +86,28 @@ export const generateTessellation = (
     `Search bounds: ${maxRowsNeeded} rows, ${maxPlanksNeeded} planks per row`,
   );
 
-  for (let rowIndex = -maxRowsNeeded; rowIndex <= maxRowsNeeded; rowIndex++) {
-    const offsetForThisRow = calculateOptimalRowOffset(
-      rowIndex,
-      minRowOffsetPx,
-      lengthPx + gapPx,
-      newSpares,
-    );
-
-    logger.trace(
-      `Processing row ${rowIndex} with offset ${offsetForThisRow.toFixed(2)}px`,
-    );
-
-    for (
-      let plankInRow = -maxPlanksNeeded;
-      plankInRow <= maxPlanksNeeded;
-      plankInRow++
-    ) {
-      if (rowIndex === 0 && plankInRow === 0) continue;
-
-      const { plankX, plankY } = calculatePlankPosition(
-        startX,
-        startY,
-        plankInRow,
-        rowIndex,
-        plankSpacingX,
-        plankSpacingY,
-        rowSpacingX,
-        rowSpacingY,
-        offsetForThisRow,
-        rotation,
-      );
-
-      if (
-        isOutsideBounds(
-          plankX,
-          plankY,
-          minX,
-          maxX,
-          minY,
-          maxY,
-          lengthPx,
-          widthPx,
-        )
-      ) {
-        logger.trace(
-          `Plank [${rowIndex},${plankInRow}] at (${plankX.toFixed(1)}, ${plankY.toFixed(1)}) is outside bounds`,
-        );
-        continue;
-      }
-
-      const testPlank = createTestPlank(
-        plankId++,
-        plankX,
-        plankY,
-        rotation,
-        dimensions,
-        rowIndex,
-        plankInRow,
-      );
-
-      logger.trace(
-        `Testing plank ${testPlank.id} at (${plankX.toFixed(1)}, ${plankY.toFixed(1)})`,
-      );
-
-      if (!plankOverlapsPolygon(testPlank, polygonPoints)) {
-        logger.trace(
-          `Plank ${testPlank.id} does not overlap polygon - skipping`,
-        );
-        continue;
-      }
-
-      if (plankCollidesWithExisting(testPlank, newPlanks, gapPx)) {
-        logger.trace(
-          `🔴 Plank ${testPlank.id} collides with existing planks - skipping`,
-          testPlank,
-          newPlanks.slice(0),
-        );
-        continue;
-      }
-
-      logger.trace(`Attempting placement for plank ${testPlank.id}`);
-      const placed = attemptPlankPlacement(
-        testPlank,
-        polygonPoints,
-        newPlanks,
-        newSpares,
-        gapPx,
-      );
-
-      if (placed) {
-        logger.trace(`✅ Successfully placed plank ${testPlank.id}`);
-      } else {
-        logger.trace(`🔴 Failed to place plank ${testPlank.id}`);
-      }
-    }
-  }
+  // Process rows with row-aware plank placement
+  plankId = processRowsWithAwarePlacement(
+    maxRowsNeeded,
+    startX,
+    startY,
+    rotation,
+    minRowOffsetPx,
+    lengthPx,
+    widthPx,
+    gapPx,
+    rowSpacingX,
+    rowSpacingY,
+    dimensions,
+    polygonPoints,
+    newPlanks,
+    newSpares,
+    plankId,
+    minX,
+    maxX,
+    minY,
+    maxY,
+  );
 
   logger.debug("Starting secondary gap-filling pass");
   // fillRemainingGaps(newPlanks, newSpares, polygonPoints, dimensions, gapPx);
@@ -196,7 +122,7 @@ export const generateTessellation = (
       id: p.id,
       x: p.x.toFixed(1),
       y: p.y.toFixed(1),
-      type: p.type,
+      length: p.length,
     })),
   );
   logger.trace(
@@ -442,6 +368,251 @@ const hasCollisionWithExisting = (
   return newPlanks.some((existingPlank) =>
     doPlanksIntersect(testPlank, existingPlank),
   );
+};
+
+// Process all rows with row-aware plank placement that considers actual plank positions
+const processRowsWithAwarePlacement = (
+  maxRowsNeeded: number,
+  startX: number,
+  startY: number,
+  rotation: number,
+  minRowOffsetPx: number,
+  lengthPx: number,
+  widthPx: number,
+  gapPx: number,
+  rowSpacingX: number,
+  rowSpacingY: number,
+  dimensions: PlankDimensions,
+  polygonPoints: Point[],
+  newPlanks: Plank[],
+  newSpares: Plank[],
+  plankId: number,
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+): number => {
+  let currentPlankId = plankId;
+  // Track row state for row-aware placement
+  const rowStates = new Map<number, RowState>();
+
+  for (let rowIndex = -maxRowsNeeded; rowIndex <= maxRowsNeeded; rowIndex++) {
+    const offsetForThisRow = calculateOptimalRowOffset(
+      rowIndex,
+      minRowOffsetPx,
+      lengthPx + gapPx,
+      newSpares,
+    );
+
+    logger.trace(
+      `Processing row ${rowIndex} with offset ${offsetForThisRow.toFixed(2)}px`,
+    );
+
+    // Initialize row state
+    if (!rowStates.has(rowIndex)) {
+      const { rowStartX, rowStartY } = calculateRowStart(
+        startX,
+        startY,
+        rowIndex,
+        rowSpacingX,
+        rowSpacingY,
+        offsetForThisRow,
+        rotation,
+      );
+      
+      rowStates.set(rowIndex, {
+        rowIndex,
+        nextX: rowStartX,
+        nextY: rowStartY,
+        placedPlanks: [],
+        completed: false,
+      });
+    }
+
+    const rowState = rowStates.get(rowIndex)!;
+    
+    // Skip if row is already completed
+    if (rowState.completed) continue;
+
+    // Process this row with continuous placement
+    currentPlankId = processRowWithContinuousPlacement(
+      rowState,
+      rotation,
+      lengthPx,
+      widthPx,
+      gapPx,
+      dimensions,
+      polygonPoints,
+      newPlanks,
+      newSpares,
+      currentPlankId,
+      minX,
+      maxX,
+      minY,
+      maxY,
+    );
+  }
+  
+  return currentPlankId;
+};
+
+// State tracking for each row during tessellation
+interface RowState {
+  rowIndex: number;
+  nextX: number;
+  nextY: number;
+  placedPlanks: Plank[];
+  completed: boolean;
+}
+
+// Calculate the starting position for a row
+const calculateRowStart = (
+  startX: number,
+  startY: number,
+  rowIndex: number,
+  rowSpacingX: number,
+  rowSpacingY: number,
+  offsetForThisRow: number,
+  rotation: number,
+) => {
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  
+  return {
+    rowStartX: startX + rowIndex * rowSpacingX + offsetForThisRow * cos,
+    rowStartY: startY + rowIndex * rowSpacingY + offsetForThisRow * sin,
+  };
+};
+
+// Process a single row with continuous plank placement
+const processRowWithContinuousPlacement = (
+  rowState: RowState,
+  rotation: number,
+  lengthPx: number,
+  widthPx: number,
+  gapPx: number,
+  dimensions: PlankDimensions,
+  polygonPoints: Point[],
+  newPlanks: Plank[],
+  newSpares: Plank[],
+  plankId: number,
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+): number => {
+  const maxAttempts = 20; // Prevent infinite loops
+  let attempts = 0;
+  let currentPlankId = plankId;
+  
+  while (!rowState.completed && attempts < maxAttempts) {
+    attempts++;
+    
+    // Skip if we're trying to place at the first plank position
+    if (rowState.rowIndex === 0 && rowState.placedPlanks.length === 0) {
+      advanceRowPosition(rowState, lengthPx + gapPx, rotation);
+      continue;
+    }
+    
+    // Check if we're outside reasonable bounds
+    if (
+      isOutsideBounds(
+        rowState.nextX,
+        rowState.nextY,
+        minX,
+        maxX,
+        minY,
+        maxY,
+        lengthPx,
+        widthPx,
+      )
+    ) {
+      logger.trace(
+        `Row ${rowState.rowIndex} completed - next position (${rowState.nextX.toFixed(1)}, ${rowState.nextY.toFixed(1)}) is outside bounds`,
+      );
+      rowState.completed = true;
+      break;
+    }
+
+    const testPlank = createTestPlank(
+      currentPlankId++,
+      rowState.nextX,
+      rowState.nextY,
+      rotation,
+      dimensions,
+      rowState.rowIndex,
+      rowState.placedPlanks.length,
+    );
+
+    logger.trace(
+      `Testing plank ${testPlank.id} at (${rowState.nextX.toFixed(1)}, ${rowState.nextY.toFixed(1)})`,
+    );
+
+    // Check if plank overlaps with polygon
+    if (!plankOverlapsPolygon(testPlank, polygonPoints)) {
+      logger.trace(
+        `Plank ${testPlank.id} does not overlap polygon - advancing position`,
+      );
+      advanceRowPosition(rowState, lengthPx + gapPx, rotation);
+      continue;
+    }
+
+    // Check for collisions with existing planks
+    if (plankCollidesWithExisting(testPlank, newPlanks, gapPx)) {
+      logger.trace(
+        `🔴 Plank ${testPlank.id} collides with existing planks - advancing position`,
+      );
+      advanceRowPosition(rowState, lengthPx + gapPx, rotation);
+      continue;
+    }
+
+    // Try to place the plank
+    logger.trace(`Attempting placement for plank ${testPlank.id}`);
+    const placed = attemptPlankPlacement(
+      testPlank,
+      polygonPoints,
+      newPlanks,
+      newSpares,
+      gapPx,
+    );
+
+    if (placed) {
+      logger.trace(`✅ Successfully placed plank ${testPlank.id}`);
+      
+      // Get the actual placed plank (might be modified by cutting)
+      const actualPlank = newPlanks[newPlanks.length - 1];
+      rowState.placedPlanks.push(actualPlank);
+      
+      // Update next position based on actual plank dimensions
+      const actualLengthPx = actualPlank.length * MM_TO_PIXELS;
+      advanceRowPosition(rowState, actualLengthPx + gapPx, rotation);
+    } else {
+      logger.trace(`🔴 Failed to place plank ${testPlank.id} - advancing position`);
+      advanceRowPosition(rowState, lengthPx + gapPx, rotation);
+    }
+  }
+  
+  if (attempts >= maxAttempts) {
+    logger.trace(`Row ${rowState.rowIndex} completed - reached maximum attempts`);
+    rowState.completed = true;
+  }
+  
+  return currentPlankId;
+};
+
+// Advance the position in a row based on actual plank length
+const advanceRowPosition = (
+  rowState: RowState,
+  advanceDistance: number,
+  rotation: number,
+) => {
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  
+  rowState.nextX += advanceDistance * cos;
+  rowState.nextY += advanceDistance * sin;
 };
 
 // Fill remaining gaps to ensure 100% polygon coverage
