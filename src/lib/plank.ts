@@ -138,24 +138,17 @@ export const plankCollidesWithExisting = (
 };
 
 // Find a suitable spare piece for the current position
+// TODO: implement these constraints for choosing a spare:
+// - The cut edge of the spare cannot meet other plank edges
+// - The cut edge of the spare can only meet edges of the polygon
+// - The uncut edges of the spare must meet edges of other planks or edges of the polygon
+// - The spare must 100% fill the space where it will be placed
 export const findSuitableSpare = (
   testPlank: Plank,
   polygonPoints: Point[],
   availableSpares: Plank[],
 ): Plank | null => {
-  const sortedSpares = [...availableSpares].sort((a, b) => b.length - a.length);
-
-  for (const spare of sortedSpares) {
-    const spareTestPlank: Plank = {
-      ...testPlank,
-      length: spare.length,
-      width: spare.width,
-    };
-
-    if (isPlankInPolygon(spareTestPlank, polygonPoints)) {
-      return spare;
-    }
-  }
+  // this function is a placeholder
 
   return null;
 };

@@ -1,21 +1,21 @@
 import Link from 'next/link';
-import CuttingStrategiesTest from "../../components/CuttingStrategiesTest";
+import TessellationTest from "../../components/TessellationTest";
 import CompactLoggingControls from "../../components/CompactLoggingControls";
 
-export default function CuttingTestPage() {
+export default function TessellationTestPage() {
   return (
     <div className="h-screen w-screen flex flex-col">
       <header className="bg-white border-b px-4 py-2 flex justify-between items-center">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-semibold">Cutting Strategies Test</h1>
+          <h1 className="text-lg font-semibold">Tessellation Testing</h1>
           <CompactLoggingControls />
         </div>
         <div className="flex gap-2">
           <Link 
-            href="/tessellation-test"
-            className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600"
+            href="/cutting-test"
+            className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
           >
-            Tessellation Test
+            Cutting Test
           </Link>
           <Link 
             href="/"
@@ -26,7 +26,7 @@ export default function CuttingTestPage() {
         </div>
       </header>
       <div className="flex-1">
-        <CuttingStrategiesTest />
+        <TessellationTest />
       </div>
     </div>
   );

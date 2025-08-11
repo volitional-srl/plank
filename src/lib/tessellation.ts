@@ -15,8 +15,10 @@ import {
   tryLinearCut,
   tryMultiLineCut,
 } from "./plankCutting";
+import { createLogger } from "./logger";
 
 const MM_TO_PIXELS = 1 / 10;
+const logger = createLogger("tessellation");
 
 export interface TessellationResult {
   planks: Plank[];
@@ -28,15 +30,11 @@ export const generateTessellation = (
   firstPlank: Plank,
   polygonPoints: Point[],
   dimensions: PlankDimensions,
-  plankLog: {
-    debug: (message: string, ...args: unknown[]) => void;
-    trace: (message: string, ...args: unknown[]) => void;
-  },
 ): TessellationResult => {
-  plankLog.debug("=== Starting tessellation procedure ===");
+  logger.debug("=== Starting tessellation procedure ===");
 
   if (polygonPoints.length < 3) {
-    plankLog.debug("Insufficient polygon points, aborting tessellation");
+    logger.debug("Insufficient polygon points, aborting tessellation");
     return { planks: [firstPlank], spares: [] };
   }
 
@@ -50,13 +48,13 @@ export const generateTessellation = (
   let plankId = 1;
 
   const { minX, maxX, minY, maxY } = calculateBoundingBox(polygonPoints);
-  
+
   const { startX, startY, rotation } = extractPlankPosition(firstPlank);
-  const { plankSpacingX, plankSpacingY, rowSpacingX, rowSpacingY } = 
+  const { plankSpacingX, plankSpacingY, rowSpacingX, rowSpacingY } =
     calculateSpacing(lengthPx, widthPx, gapPx, rotation);
 
-  plankLog.debug("Starting row-based tessellation");
-  
+  logger.debug("Starting row-based tessellation");
+
   for (let rowIndex = -20; rowIndex <= 20; rowIndex++) {
     const offsetForThisRow = calculateOptimalRowOffset(
       rowIndex,
@@ -69,16 +67,42 @@ export const generateTessellation = (
       if (rowIndex === 0 && plankInRow === 0) continue;
 
       const { plankX, plankY } = calculatePlankPosition(
-        startX, startY, plankInRow, rowIndex,
-        plankSpacingX, plankSpacingY, rowSpacingX, rowSpacingY,
-        offsetForThisRow, rotation
+        startX,
+        startY,
+        plankInRow,
+        rowIndex,
+        plankSpacingX,
+        plankSpacingY,
+        rowSpacingX,
+        rowSpacingY,
+        offsetForThisRow,
+        rotation,
       );
 
-      if (isOutsideBounds(plankX, plankY, minX, maxX, minY, maxY, lengthPx, widthPx)) {
+      if (
+        isOutsideBounds(
+          plankX,
+          plankY,
+          minX,
+          maxX,
+          minY,
+          maxY,
+          lengthPx,
+          widthPx,
+        )
+      ) {
         continue;
       }
 
-      const testPlank = createTestPlank(plankId++, plankX, plankY, rotation, dimensions, rowIndex, plankInRow);
+      const testPlank = createTestPlank(
+        plankId++,
+        plankX,
+        plankY,
+        rotation,
+        dimensions,
+        rowIndex,
+        plankInRow,
+      );
 
       if (!plankOverlapsPolygon(testPlank, polygonPoints)) {
         continue;
@@ -94,24 +118,23 @@ export const generateTessellation = (
         newPlanks,
         newSpares,
         gapPx,
-        plankLog,
       );
     }
   }
 
-  plankLog.debug("Starting secondary gap-filling pass");
-  fillRemainingGaps(newPlanks, newSpares, polygonPoints, dimensions, gapPx, plankLog);
+  logger.debug("Starting secondary gap-filling pass");
+  // fillRemainingGaps(newPlanks, newSpares, polygonPoints, dimensions, gapPx);
 
-  plankLog.debug(`=== Tessellation complete ===`);
+  logger.debug(`=== Tessellation complete ===`);
   return { planks: newPlanks, spares: newSpares };
 };
 
 // Calculate bounding box of polygon
 const calculateBoundingBox = (polygonPoints: Point[]) => ({
-  minX: Math.min(...polygonPoints.map(p => p.x)),
-  maxX: Math.max(...polygonPoints.map(p => p.x)),
-  minY: Math.min(...polygonPoints.map(p => p.y)),
-  maxY: Math.max(...polygonPoints.map(p => p.y)),
+  minX: Math.min(...polygonPoints.map((p) => p.x)),
+  maxX: Math.max(...polygonPoints.map((p) => p.x)),
+  minY: Math.min(...polygonPoints.map((p) => p.y)),
+  maxY: Math.max(...polygonPoints.map((p) => p.y)),
 });
 
 // Extract position and rotation from first plank
@@ -122,7 +145,12 @@ const extractPlankPosition = (firstPlank: Plank) => ({
 });
 
 // Calculate spacing between planks and rows
-const calculateSpacing = (lengthPx: number, widthPx: number, gapPx: number, rotation: number) => {
+const calculateSpacing = (
+  lengthPx: number,
+  widthPx: number,
+  gapPx: number,
+  rotation: number,
+) => {
   const rad = (rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
@@ -137,33 +165,63 @@ const calculateSpacing = (lengthPx: number, widthPx: number, gapPx: number, rota
 
 // Calculate position for a plank in the grid
 const calculatePlankPosition = (
-  startX: number, startY: number, plankInRow: number, rowIndex: number,
-  plankSpacingX: number, plankSpacingY: number, rowSpacingX: number, rowSpacingY: number,
-  offsetForThisRow: number, rotation: number
+  startX: number,
+  startY: number,
+  plankInRow: number,
+  rowIndex: number,
+  plankSpacingX: number,
+  plankSpacingY: number,
+  rowSpacingX: number,
+  rowSpacingY: number,
+  offsetForThisRow: number,
+  rotation: number,
 ) => {
   const rad = (rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
 
   return {
-    plankX: startX + plankInRow * plankSpacingX + rowIndex * rowSpacingX + offsetForThisRow * cos,
-    plankY: startY + plankInRow * plankSpacingY + rowIndex * rowSpacingY + offsetForThisRow * sin,
+    plankX:
+      startX +
+      plankInRow * plankSpacingX +
+      rowIndex * rowSpacingX +
+      offsetForThisRow * cos,
+    plankY:
+      startY +
+      plankInRow * plankSpacingY +
+      rowIndex * rowSpacingY +
+      offsetForThisRow * sin,
   };
 };
 
 // Check if plank position is outside bounding box
 const isOutsideBounds = (
-  plankX: number, plankY: number, minX: number, maxX: number, 
-  minY: number, maxY: number, lengthPx: number, widthPx: number
+  plankX: number,
+  plankY: number,
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+  lengthPx: number,
+  widthPx: number,
 ): boolean => {
-  return plankX < minX - lengthPx || plankX > maxX + lengthPx ||
-         plankY < minY - widthPx || plankY > maxY + widthPx;
+  return (
+    plankX < minX - lengthPx ||
+    plankX > maxX + lengthPx ||
+    plankY < minY - widthPx ||
+    plankY > maxY + widthPx
+  );
 };
 
 // Create test plank for position
 const createTestPlank = (
-  plankId: number, plankX: number, plankY: number, rotation: number, 
-  dimensions: PlankDimensions, rowIndex: number, plankInRow: number
+  plankId: number,
+  plankX: number,
+  plankY: number,
+  rotation: number,
+  dimensions: PlankDimensions,
+  rowIndex: number,
+  plankInRow: number,
 ): Plank => ({
   id: `row${rowIndex}-plank${plankInRow}-${plankId}`,
   x: plankX,
@@ -180,23 +238,33 @@ const attemptPlankPlacement = (
   newPlanks: Plank[],
   newSpares: Plank[],
   gapPx: number,
-  plankLog: { debug: (message: string, ...args: unknown[]) => void; trace: (message: string, ...args: unknown[]) => void },
 ): boolean => {
   // Try using existing spare first
   const suitableSpare = findSuitableSpare(testPlank, polygonPoints, newSpares);
   if (suitableSpare) {
-    return applySparePiece(testPlank, suitableSpare, newPlanks, newSpares, plankLog);
+    return applySparePiece(
+      testPlank,
+      suitableSpare,
+      newPlanks,
+      newSpares,
+    );
   }
 
   // Try full plank
   if (isPlankInPolygon(testPlank, polygonPoints)) {
-    plankLog.debug(`Full plank ${testPlank.id} fits completely`);
+    logger.debug(`Full plank ${testPlank.id} fits completely`);
     newPlanks.push(testPlank);
     return true;
   }
 
   // Try cutting strategies
-  return attemptCuttingStrategies(testPlank, polygonPoints, newPlanks, newSpares, gapPx, plankLog);
+  return attemptCuttingStrategies(
+    testPlank,
+    polygonPoints,
+    newPlanks,
+    newSpares,
+    gapPx,
+  );
 };
 
 // Use a spare piece
@@ -205,11 +273,12 @@ const applySparePiece = (
   suitableSpare: Plank,
   newPlanks: Plank[],
   newSpares: Plank[],
-  plankLog: { debug: (message: string, ...args: unknown[]) => void },
 ): boolean => {
   const spareIndex = newSpares.indexOf(suitableSpare);
   if (spareIndex >= 0) {
-    plankLog.debug(`Using spare piece (${suitableSpare.length}mm) for plank ${testPlank.id}`);
+    logger.debug(
+      `Using spare piece (${suitableSpare.length}mm) for plank ${testPlank.id}`,
+    );
     newSpares.splice(spareIndex, 1);
     const sparePlank = {
       ...suitableSpare,
@@ -230,12 +299,14 @@ const attemptCuttingStrategies = (
   newPlanks: Plank[],
   newSpares: Plank[],
   gapPx: number,
-  plankLog: { debug: (message: string, ...args: unknown[]) => void; trace: (message: string, ...args: unknown[]) => void },
 ): boolean => {
   // Try linear cut
   const linearCutResult = tryLinearCut(testPlank, polygonPoints);
-  if (linearCutResult && !plankCollidesWithExisting(linearCutResult.fitted, newPlanks, gapPx)) {
-    plankLog.debug(`Linear cut plank ${testPlank.id} placed successfully`);
+  if (
+    linearCutResult &&
+    !plankCollidesWithExisting(linearCutResult.fitted, newPlanks, gapPx)
+  ) {
+    logger.debug(`Linear cut plank ${testPlank.id} placed successfully`);
     newPlanks.push(linearCutResult.fitted);
     newSpares.push(linearCutResult.spare);
     return true;
@@ -244,7 +315,7 @@ const attemptCuttingStrategies = (
   // Try multi-line cut
   const multiLineCutResult = tryMultiLineCut(testPlank, polygonPoints);
   if (multiLineCutResult && !hasCollisionWithExisting(testPlank, newPlanks)) {
-    plankLog.debug(`Multi-line cut plank ${testPlank.id} placed successfully`);
+    logger.debug(`Multi-line cut plank ${testPlank.id} placed successfully`);
     newPlanks.push(multiLineCutResult.fitted);
     if (multiLineCutResult.spare) {
       newSpares.push(multiLineCutResult.spare);
@@ -255,7 +326,7 @@ const attemptCuttingStrategies = (
   // Try shape cutting
   const shapeCutPlank = fitPlankByShapeCutting(testPlank, polygonPoints);
   if (shapeCutPlank && !hasCollisionWithExisting(testPlank, newPlanks)) {
-    plankLog.debug(`Shape cut plank ${testPlank.id} placed successfully`);
+    logger.debug(`Shape cut plank ${testPlank.id} placed successfully`);
     newPlanks.push(shapeCutPlank);
     const spare = createSpareFromCut(testPlank, shapeCutPlank);
     if (spare) {
@@ -268,8 +339,13 @@ const attemptCuttingStrategies = (
 };
 
 // Check for collision with existing planks
-const hasCollisionWithExisting = (testPlank: Plank, newPlanks: Plank[]): boolean => {
-  return newPlanks.some(existingPlank => doPlanksIntersect(testPlank, existingPlank));
+const hasCollisionWithExisting = (
+  testPlank: Plank,
+  newPlanks: Plank[],
+): boolean => {
+  return newPlanks.some((existingPlank) =>
+    doPlanksIntersect(testPlank, existingPlank),
+  );
 };
 
 // Fill remaining gaps to ensure 100% polygon coverage
@@ -279,7 +355,10 @@ const fillRemainingGaps = (
   polygonPoints: Point[],
   dimensions: PlankDimensions,
   gapPx: number,
-  plankLog: { debug: (message: string, ...args: unknown[]) => void; trace: (message: string, ...args: unknown[]) => void },
+  plankLog: {
+    debug: (message: string, ...args: unknown[]) => void;
+    trace: (message: string, ...args: unknown[]) => void;
+  },
 ) => {
   const lengthPx = dimensions.length * MM_TO_PIXELS;
   const widthPx = dimensions.width * MM_TO_PIXELS;
@@ -298,12 +377,20 @@ const fillRemainingGaps = (
         width: dimensions.width,
       };
 
-      if (!plankOverlapsPolygon(testPlank, polygonPoints) ||
-          plankCollidesWithExisting(testPlank, newPlanks, gapPx)) {
+      if (
+        !plankOverlapsPolygon(testPlank, polygonPoints) ||
+        plankCollidesWithExisting(testPlank, newPlanks, gapPx)
+      ) {
         continue;
       }
 
-      attemptPlankPlacement(testPlank, polygonPoints, newPlanks, newSpares, gapPx, plankLog);
+      attemptPlankPlacement(
+        testPlank,
+        polygonPoints,
+        newPlanks,
+        newSpares,
+        gapPx,
+      );
     }
   }
 };

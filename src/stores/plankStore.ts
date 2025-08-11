@@ -2,29 +2,7 @@ import { atom, computed } from "nanostores";
 import type { Point } from "../lib/geometry";
 import type { Plank } from "../lib/plank";
 import { generateTessellation } from "../lib/tessellation";
-
-interface PlankLoggingConfig {
-  enabled: boolean;
-  level: "debug" | "trace";
-}
-
-const $plankLogging = atom<PlankLoggingConfig>({
-  enabled: true,
-  level: "trace",
-});
-
-const createPlankLogger = (config: PlankLoggingConfig) => ({
-  debug: (message: string, ...args: unknown[]) => {
-    if (config.enabled) {
-      console.debug(`[PLANK DEBUG] ${message}`, ...args);
-    }
-  },
-  trace: (message: string, ...args: unknown[]) => {
-    if (config.enabled && config.level === "trace") {
-      console.debug(`[PLANK TRACE] ${message}`, ...args);
-    }
-  },
-});
+import { setLogLevel, type LogModule, type LogLevel } from "../lib/logger";
 
 export interface PlankDimensions {
   length: number; // in mm
@@ -70,13 +48,9 @@ export const $plankCount = computed($planks, (planks) => planks.length);
 const MM_TO_PIXELS = 1 / 10; // 1px = 10mm
 
 export const plankActions = {
-  // Debug logging controls
-  enableDebugLogging: (enabled: boolean = true) => {
-    $plankLogging.set({ ...$plankLogging.get(), enabled });
-  },
-
-  setLogLevel: (level: "debug" | "trace") => {
-    $plankLogging.set({ ...$plankLogging.get(), level });
+  // Logging controls
+  setModuleLogLevel: (module: LogModule, level: LogLevel) => {
+    setLogLevel(module, level);
   },
 
   // Plank dimension management
@@ -159,13 +133,11 @@ export const plankActions = {
   // Generate tessellation with proper row-based layout and configurable gaps
   generateTessellation: (firstPlank: Plank, polygonPoints: Point[]) => {
     const dimensions = $plankDimensions.get();
-    const plankLog = createPlankLogger($plankLogging.get());
 
     const result = generateTessellation(
       firstPlank,
       polygonPoints,
       dimensions,
-      plankLog,
     );
 
     $planks.set(result.planks);

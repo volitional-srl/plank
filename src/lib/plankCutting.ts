@@ -13,6 +13,10 @@ import { cutPlank, getPlankCorners, isPlankInPolygon } from "./plank";
 
 const MM_TO_PIXELS = 1 / 10;
 
+import { createLogger } from "./logger";
+
+const logger = createLogger("plankCutting");
+
 // Try to fit a plank by cutting it to an arbitrary shape
 export const fitPlankByShapeCutting = (
   plank: Plank,
@@ -74,10 +78,10 @@ export const tryLinearCut = (
   plank: Plank,
   polygonPoints: Point[],
 ): { fitted: Plank; spare: Plank } | null => {
-  console.log("  📏 Linear cut: Calculating intersection distance...");
+  logger.debug("📏 Linear cut: Calculating intersection distance...");
   const lengthPx = plank.length * MM_TO_PIXELS;
   const widthPx = plank.width * MM_TO_PIXELS;
-  console.log("  📏 Plank dimensions in pixels:", { lengthPx, widthPx });
+  logger.trace("📏 Plank dimensions in pixels:", { lengthPx, widthPx });
 
   const intersectionDistance = calculateIntersectionDistance(
     { x: plank.x, y: plank.y },
@@ -87,12 +91,12 @@ export const tryLinearCut = (
     polygonPoints,
   );
 
-  console.log("  📏 Intersection distance:", intersectionDistance);
-  console.log("  📏 Length threshold (95%):", lengthPx * 0.95);
+  logger.trace("📏 Intersection distance:", intersectionDistance);
+  logger.trace("📏 Length threshold (95%):", lengthPx * 0.95);
 
   if (!intersectionDistance || intersectionDistance >= lengthPx * 0.95) {
-    console.log(
-      "  ❌ Linear cut failed: No intersection or distance too large",
+    logger.debug(
+      "❌ Linear cut failed: No intersection or distance too large",
     );
     return null;
   }
@@ -130,13 +134,13 @@ export const tryLinearCut = (
       Math.min(edgeMaxY, plankBounds.maxY);
 
     if (edgeOverlapsX && edgeOverlapsY) {
-      console.log(
-        `    📏 Edge ${i}: (${p1.x},${p1.y}) to (${p2.x},${p2.y}) intersects plank`,
+      logger.trace(
+        `📏 Edge ${i}: (${p1.x},${p1.y}) to (${p2.x},${p2.y}) intersects plank`,
       );
       intersectingEdges++;
     } else {
-      console.log(
-        `    📏 Edge ${i}: (${p1.x},${p1.y}) to (${p2.x},${p2.y}) does NOT intersect plank`,
+      logger.trace(
+        `📏 Edge ${i}: (${p1.x},${p1.y}) to (${p2.x},${p2.y}) does NOT intersect plank`,
       );
     }
   }
@@ -144,18 +148,18 @@ export const tryLinearCut = (
   // If the plank intersects more than 1 edge, it's likely a complex shape that needs multi-line cutting
   // Linear cuts should only be used for the simplest case: plank extending past exactly one polygon edge
   if (intersectingEdges > 1) {
-    console.log(
-      `  ❌ Linear cut failed: Too many intersecting edges (${intersectingEdges}), use multi-line cutting`,
+    logger.debug(
+      `❌ Linear cut failed: Too many intersecting edges (${intersectingEdges}), use multi-line cutting`,
     );
     return null;
   }
 
-  console.log(
-    `  📏 Linear cut viable: Only ${intersectingEdges} intersecting edges`,
+  logger.debug(
+    `📏 Linear cut viable: Only ${intersectingEdges} intersecting edges`,
   );
 
   const cutLengthMm = intersectionDistance * pixelsToMm(1);
-  console.log("  📏 Cut length in mm:", cutLengthMm);
+  logger.trace("📏 Cut length in mm:", cutLengthMm);
 
   // Try both positive and negative offsets to determine which side of plank to keep
   const offsetMm = 5;
@@ -180,7 +184,7 @@ export const tryLinearCut = (
       ((plank.length * MM_TO_PIXELS - negativeAdjustedDistance) / 2) * sin,
   };
 
-  console.log("  📏 Trying negative offset:", {
+  logger.trace("📏 Trying negative offset:", {
     negativeAdjustedDistance,
     negativeTestPlank,
   });
@@ -189,7 +193,7 @@ export const tryLinearCut = (
     negativeCutLengthMm > 0 &&
     isPlankInPolygon(negativeTestPlank, polygonPoints)
   ) {
-    console.log("  ✅ Negative offset works - using right/end side");
+    logger.debug("✅ Negative offset works - using right/end side");
 
     const fitted: Plank = {
       ...plank,
@@ -214,7 +218,7 @@ export const tryLinearCut = (
       originalLength: plank.originalLength || plank.length,
     };
 
-    console.log("  ✅ Linear cut successful! (negative offset)", {
+    logger.debug("✅ Linear cut successful! (negative offset)", {
       fitted,
       spare,
     });
@@ -240,7 +244,7 @@ export const tryLinearCut = (
         sin,
   };
 
-  console.log("  📏 Trying positive offset:", {
+  logger.trace("📏 Trying positive offset:", {
     positiveAdjustedDistance,
     positiveTestPlank,
   });
@@ -249,7 +253,7 @@ export const tryLinearCut = (
     positiveCutLengthMm > 0 &&
     isPlankInPolygon(positiveTestPlank, polygonPoints)
   ) {
-    console.log("  ✅ Positive offset works - using left/start side");
+    logger.debug("✅ Positive offset works - using left/start side");
 
     const fitted: Plank = {
       ...plank,
@@ -274,14 +278,14 @@ export const tryLinearCut = (
       originalLength: plank.originalLength || plank.length,
     };
 
-    console.log("  ✅ Linear cut successful! (positive offset)", {
+    logger.debug("✅ Linear cut successful! (positive offset)", {
       fitted,
       spare,
     });
     return { fitted, spare };
   }
 
-  console.log("  ❌ Linear cut failed: Neither offset produces valid plank");
+  logger.debug("❌ Linear cut failed: Neither offset produces valid plank");
   return null;
 };
 

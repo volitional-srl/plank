@@ -15,6 +15,13 @@ export interface TestScenario {
   plank: Plank;
   expectedMethod: "linear" | "multi-line" | "shape" | "none";
   expectedCutLines?: Point[][];
+  expectedFittedPlank?: {
+    x: number;
+    y: number;
+    rotation: number;
+    length: number;
+    width: number;
+  };
 }
 
 export interface CuttingResult {
@@ -150,21 +157,25 @@ export const attemptCuttingStrategies = (
   expectedCutLines: Point[][] = [],
 ): CuttingResult => {
   const MM_TO_PIXELS = 1 / 10;
-  
-  console.log('=== Cutting Strategy Debug ===');
-  console.log('Plank:', testPlank);
-  console.log('Polygon points:', polygonPoints);
+
+  console.log("=== Cutting Strategy Debug ===");
+  console.log("Plank:", testPlank);
+  console.log("Polygon points:", polygonPoints);
 
   // Try linear cut
-  console.log('Trying linear cut...');
+  console.log("Trying linear cut...");
   const linearCutResult = tryLinearCut(testPlank, polygonPoints);
-  console.log('Linear cut result:', linearCutResult);
-  
+  console.log("Linear cut result:", linearCutResult);
+
   if (linearCutResult) {
-    const hasCollision = plankCollidesWithExisting(linearCutResult.fitted, existingPlanks, gapPx);
-    console.log('Linear cut collision check:', hasCollision);
+    const hasCollision = plankCollidesWithExisting(
+      linearCutResult.fitted,
+      existingPlanks,
+      gapPx,
+    );
+    console.log("Linear cut collision check:", hasCollision);
   }
-  
+
   if (
     linearCutResult &&
     !plankCollidesWithExisting(linearCutResult.fitted, existingPlanks, gapPx)
@@ -182,7 +193,7 @@ export const attemptCuttingStrategies = (
       polygonPoints,
     );
 
-    console.log('✅ Linear cut successful!');
+    console.log("✅ Linear cut successful!");
     return {
       success: true,
       method: "linear",
@@ -198,15 +209,15 @@ export const attemptCuttingStrategies = (
   }
 
   // Try multi-line cut
-  console.log('Trying multi-line cut...');
+  console.log("Trying multi-line cut...");
   const multiLineCutResult = tryMultiLineCut(testPlank, polygonPoints);
-  console.log('Multi-line cut result:', multiLineCutResult);
-  
+  console.log("Multi-line cut result:", multiLineCutResult);
+
   if (multiLineCutResult) {
     const hasCollision = hasCollisionWithExisting(testPlank, existingPlanks);
-    console.log('Multi-line cut collision check:', hasCollision);
+    console.log("Multi-line cut collision check:", hasCollision);
   }
-  
+
   if (
     multiLineCutResult &&
     !hasCollisionWithExisting(testPlank, existingPlanks)
@@ -217,7 +228,7 @@ export const attemptCuttingStrategies = (
       expectedCutLines,
     );
 
-    console.log('✅ Multi-line cut successful!');
+    console.log("✅ Multi-line cut successful!");
     return {
       success: true,
       method: "multi-line",
@@ -233,19 +244,19 @@ export const attemptCuttingStrategies = (
   }
 
   // Try shape cutting
-  console.log('Trying shape cutting...');
+  console.log("Trying shape cutting...");
   const shapeCutPlank = fitPlankByShapeCutting(testPlank, polygonPoints);
-  console.log('Shape cut result:', shapeCutPlank);
-  
+  console.log("Shape cut result:", shapeCutPlank);
+
   if (shapeCutPlank) {
     const hasCollision = hasCollisionWithExisting(testPlank, existingPlanks);
-    console.log('Shape cut collision check:', hasCollision);
+    console.log("Shape cut collision check:", hasCollision);
   }
-  
+
   if (shapeCutPlank && !hasCollisionWithExisting(testPlank, existingPlanks)) {
     const spare = createSpareFromCut(testPlank, shapeCutPlank);
 
-    console.log('✅ Shape cut successful!');
+    console.log("✅ Shape cut successful!");
     return {
       success: true,
       method: "shape",
@@ -266,7 +277,7 @@ export const attemptCuttingStrategies = (
     };
   }
 
-  console.log('❌ No cutting method succeeded');
+  console.log("❌ No cutting method succeeded");
   return {
     success: false,
     method: "none",
@@ -308,6 +319,13 @@ export const createTestScenarios = (): TestScenario[] => [
         { x: 350, y: 200 },
       ], // Vertical cut at polygon's right edge
     ],
+    expectedFittedPlank: {
+      x: 294.8, // Shifted left to center the cut plank within polygon bounds
+      y: 150, // Same y position
+      rotation: 0, // Same rotation
+      length: 1095, // Cut from 1200mm to 1000mm (cut distance: 50px = 500mm)
+      width: 240, // Same width
+    },
   },
   {
     name: "Linear Cut - Rectangular room (left edge)",
@@ -333,6 +351,13 @@ export const createTestScenarios = (): TestScenario[] => [
         { x: 100, y: 200 },
       ], // Vertical cut at polygon's left edge
     ],
+    expectedFittedPlank: {
+      x: 155.775, // Shifted right to center the cut plank within polygon bounds
+      y: 150, // Same y position
+      rotation: 0, // Same rotation
+      length: 1095, // Cut from 1200mm to 1000mm (cut distance: 50px = 500mm)
+      width: 240, // Same width
+    },
   },
   {
     name: "Shape Cut - L-shaped room",
@@ -366,6 +391,13 @@ export const createTestScenarios = (): TestScenario[] => [
         { x: 240, y: 175 },
       ], // Horizontal cut at y=175
     ],
+    expectedFittedPlank: {
+      x: 175, // Positioned at the corner where cutting occurs
+      y: 137.5, // Centered in the upper horizontal section (100-175)
+      rotation: 0, // Same rotation
+      length: 600, // Cut to fit the upper horizontal section (150mm wide = 75px, so ~600mm length)
+      width: 200, // Same width
+    },
   },
   {
     name: "Multi-line Cut - H-shaped room",
@@ -414,6 +446,13 @@ export const createTestScenarios = (): TestScenario[] => [
         { x: 200, y: 165 },
       ],
     ],
+    expectedFittedPlank: {
+      x: 175, // Same position as original
+      y: 200, // Centered in the horizontal crossbar section (175-225)
+      rotation: 0, // Same rotation
+      length: 500, // Cut to fit within the crossbar width (50px = 500mm)
+      width: 200, // Same width
+    },
   },
   {
     name: "No Cut Possible - Plank completely outside",
@@ -434,5 +473,7 @@ export const createTestScenarios = (): TestScenario[] => [
     expectedMethod: "none" as const,
     // No expected cut lines since plank is outside polygon
     expectedCutLines: [],
+    // No expected fitted plank since cutting is not possible
+    expectedFittedPlank: undefined,
   },
 ];
