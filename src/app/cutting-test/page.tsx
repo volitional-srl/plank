@@ -1,5 +1,5 @@
-import Link from 'next/link';
-import CuttingStrategiesTest from "../../components/CuttingStrategiesTest";
+import Link from "next/link";
+import CuttingStrategiesTest from "../../components/TestCuttingStrategies";
 import CompactLoggingControls from "../../components/CompactLoggingControls";
 
 export default function CuttingTestPage() {
@@ -11,13 +11,13 @@ export default function CuttingTestPage() {
           <CompactLoggingControls />
         </div>
         <div className="flex gap-2">
-          <Link 
+          <Link
             href="/tessellation-test"
             className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600"
           >
             Tessellation Test
           </Link>
-          <Link 
+          <Link
             href="/"
             className="px-3 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
           >

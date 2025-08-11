@@ -1,3 +1,4 @@
+"use client";
 // Centralized logging system for the Plank application
 export type LogLevel = "OFF" | "ERROR" | "WARN" | "LOG" | "DEBUG" | "TRACE";
 
@@ -100,6 +101,16 @@ export const disableAllLogs = () => {
   });
 };
 
-window.setLogLevel = setLogLevel;
-window.enableDebugLogs = enableDebugLogs;
-window.disableAllLogs = disableAllLogs;
+declare global {
+  interface Window {
+    setLogLevel: typeof setLogLevel;
+    enableDebugLogs: typeof enableDebugLogs;
+    disableAllLogs: typeof disableAllLogs;
+  }
+}
+
+if (globalThis?.window) {
+  window.setLogLevel = setLogLevel;
+  window.enableDebugLogs = enableDebugLogs;
+  window.disableAllLogs = disableAllLogs;
+}

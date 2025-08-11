@@ -76,7 +76,15 @@ export const generateTessellation = (
 
   logger.debug("Starting row-based tessellation");
 
-  for (let rowIndex = -20; rowIndex <= 20; rowIndex++) {
+  // Calculate reasonable search bounds based on polygon size and plank dimensions
+  const polygonWidth = maxX - minX;
+  const polygonHeight = maxY - minY;
+  const maxRowsNeeded = Math.ceil(polygonHeight / widthPx) + 2; // Add small buffer
+  const maxPlanksNeeded = Math.ceil(polygonWidth / lengthPx) + 2; // Add small buffer
+  
+  logger.trace(`Search bounds: ${maxRowsNeeded} rows, ${maxPlanksNeeded} planks per row`);
+
+  for (let rowIndex = -maxRowsNeeded; rowIndex <= maxRowsNeeded; rowIndex++) {
     const offsetForThisRow = calculateOptimalRowOffset(
       rowIndex,
       minRowOffsetPx,
@@ -86,8 +94,7 @@ export const generateTessellation = (
 
     logger.trace(`Processing row ${rowIndex} with offset ${offsetForThisRow.toFixed(2)}px`);
 
-    for (let plankInRow = -20; plankInRow <= 20; plankInRow++) {
-      if (rowIndex === 0 && plankInRow === 0) continue;
+    for (let plankInRow = -maxPlanksNeeded; plankInRow <= maxPlanksNeeded; plankInRow++) {
 
       const { plankX, plankY } = calculatePlankPosition(
         startX,

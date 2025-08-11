@@ -13,7 +13,7 @@ import DrawingCanvas from "./DrawingCanvas";
 import PolygonRenderer from "./PolygonRenderer";
 import PlankRenderer from "./PlankRenderer";
 
-export default function CuttingStrategiesTest() {
+export default function TestCuttingStrategies() {
   const [selectedScenario, setSelectedScenario] = useState<number>(0);
   const [testResults, setTestResults] = useState<CuttingResult[]>([]);
   const scenarios = createTestScenarios();
@@ -200,27 +200,33 @@ export default function CuttingStrategiesTest() {
               {currentResult.fittedPlank && (
                 <div>
                   <span className="font-medium">Fitted Plank:</span>{" "}
-                  {currentResult.fittedPlank.length}mm × {currentResult.fittedPlank.width}mm
+                  {currentResult.fittedPlank.length}mm ×{" "}
+                  {currentResult.fittedPlank.width}mm
                   <br />
                   <span className="text-xs text-gray-600">
-                    Position: ({currentResult.fittedPlank.x.toFixed(1)}, {currentResult.fittedPlank.y.toFixed(1)})
+                    Position: ({currentResult.fittedPlank.x.toFixed(1)},{" "}
+                    {currentResult.fittedPlank.y.toFixed(1)})
                   </span>
                 </div>
               )}
               {currentScenario.expectedFittedPlank && (
                 <div>
                   <span className="font-medium">Expected Fitted:</span>{" "}
-                  {currentScenario.expectedFittedPlank.length}mm × {currentScenario.expectedFittedPlank.width}mm
+                  {currentScenario.expectedFittedPlank.length}mm ×{" "}
+                  {currentScenario.expectedFittedPlank.width}mm
                   <br />
                   <span className="text-xs text-gray-600">
-                    Position: ({currentScenario.expectedFittedPlank.x.toFixed(1)}, {currentScenario.expectedFittedPlank.y.toFixed(1)})
+                    Position: (
+                    {currentScenario.expectedFittedPlank.x.toFixed(1)},{" "}
+                    {currentScenario.expectedFittedPlank.y.toFixed(1)})
                   </span>
                 </div>
               )}
               {currentResult.spareCreated && (
                 <div>
                   <span className="font-medium">Spare Created:</span>{" "}
-                  {currentResult.spareCreated.length}mm × {currentResult.spareCreated.width}mm
+                  {currentResult.spareCreated.length}mm ×{" "}
+                  {currentResult.spareCreated.width}mm
                 </div>
               )}
 

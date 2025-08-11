@@ -13,7 +13,7 @@ import DrawingCanvas from "./DrawingCanvas";
 import PolygonRenderer from "./PolygonRenderer";
 import PlankRenderer from "./PlankRenderer";
 
-export default function TessellationTest() {
+export default function TestTessellation() {
   const [selectedScenario, setSelectedScenario] = useState<number>(0);
   const [testResults, setTestResults] = useState<TessellationTestResult[]>([]);
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -22,12 +22,12 @@ export default function TessellationTest() {
   const runTest = async (scenarioIndex: number) => {
     const scenario = scenarios[scenarioIndex];
     setIsRunning(true);
-    
+
     console.log("Running tessellation test for scenario:", scenario.name);
-    
+
     try {
       const result = runTessellationTest(scenario);
-      
+
       const newResults = [...testResults];
       newResults[scenarioIndex] = result;
       setTestResults(newResults);
@@ -40,9 +40,11 @@ export default function TessellationTest() {
 
   const runAllTests = async () => {
     setIsRunning(true);
-    
+
     try {
-      const results = scenarios.map((scenario) => runTessellationTest(scenario));
+      const results = scenarios.map((scenario) =>
+        runTessellationTest(scenario),
+      );
       setTestResults(results);
     } catch (error) {
       console.error("Tests failed:", error);
@@ -115,8 +117,8 @@ export default function TessellationTest() {
             onClick={runAllTests}
             disabled={isRunning}
             className={`w-full px-4 py-2 text-white rounded ${
-              isRunning 
-                ? "bg-gray-400 cursor-not-allowed" 
+              isRunning
+                ? "bg-gray-400 cursor-not-allowed"
                 : "bg-blue-500 hover:bg-blue-600"
             }`}
           >
@@ -127,7 +129,11 @@ export default function TessellationTest() {
         <div className="mb-4">
           <h3 className="text-sm font-semibold mb-2">Test Scenarios</h3>
           {scenarios.map((scenario, index) => (
-            <div key={index} className="mb-2" data-testid="tessellation-scenario">
+            <div
+              key={index}
+              className="mb-2"
+              data-testid="tessellation-scenario"
+            >
               <button
                 onClick={() => setSelectedScenario(index)}
                 className={`w-full text-left p-2 rounded text-sm border ${
@@ -138,7 +144,8 @@ export default function TessellationTest() {
               >
                 <div className="font-medium">{scenario.name}</div>
                 <div className="text-xs text-gray-600">
-                  Expected: {scenario.expectedMetrics.totalPlanks} planks, {scenario.expectedMetrics.coveragePercentage}% coverage
+                  Expected: {scenario.expectedMetrics.totalPlanks} planks,{" "}
+                  {scenario.expectedMetrics.coveragePercentage}% coverage
                 </div>
               </button>
 
@@ -147,8 +154,8 @@ export default function TessellationTest() {
                   onClick={() => runTest(index)}
                   disabled={isRunning}
                   className={`px-2 py-1 text-xs text-white rounded ${
-                    isRunning 
-                      ? "bg-gray-400 cursor-not-allowed" 
+                    isRunning
+                      ? "bg-gray-400 cursor-not-allowed"
                       : "bg-green-500 hover:bg-green-600"
                   }`}
                 >
@@ -177,15 +184,16 @@ export default function TessellationTest() {
         {currentResult && (
           <div className="mb-4 p-3 bg-white rounded border">
             <h4 className="font-semibold mb-3">Test Results</h4>
-            
+
             {/* Overall Status */}
             <div className="mb-3 p-2 rounded border-l-4 border-l-blue-500 bg-blue-50">
               <div className="flex items-center justify-between">
                 <span className="font-medium">Overall Status:</span>
-                <span className={`font-bold ${getVerificationColor(currentResult.verification.overallPass)}`}>
-                  {getVerificationIcon(currentResult.verification.overallPass)} {
-                    currentResult.verification.overallPass ? "PASS" : "FAIL"
-                  }
+                <span
+                  className={`font-bold ${getVerificationColor(currentResult.verification.overallPass)}`}
+                >
+                  {getVerificationIcon(currentResult.verification.overallPass)}{" "}
+                  {currentResult.verification.overallPass ? "PASS" : "FAIL"}
                 </span>
               </div>
             </div>
@@ -199,67 +207,147 @@ export default function TessellationTest() {
                   <div>
                     <span className="text-gray-600">Total Planks:</span>
                     <div className="flex justify-between items-center">
-                      <span>Expected: {currentResult.scenario.expectedMetrics.totalPlanks}</span>
-                      <span className={getVerificationColor(currentResult.verification.plankCountMatch)}>
-                        {getVerificationIcon(currentResult.verification.plankCountMatch)}
+                      <span>
+                        Expected:{" "}
+                        {currentResult.scenario.expectedMetrics.totalPlanks}
+                      </span>
+                      <span
+                        className={getVerificationColor(
+                          currentResult.verification.plankCountMatch,
+                        )}
+                      >
+                        {getVerificationIcon(
+                          currentResult.verification.plankCountMatch,
+                        )}
                       </span>
                     </div>
-                    <div className="font-medium">Actual: {currentResult.actualMetrics.totalPlanks}</div>
+                    <div className="font-medium">
+                      Actual: {currentResult.actualMetrics.totalPlanks}
+                    </div>
                   </div>
                   <div>
                     <span className="text-gray-600">Cut Planks:</span>
                     <div className="flex justify-between items-center">
-                      <span>Expected: {currentResult.scenario.expectedMetrics.cutPlanks}</span>
-                      <span className={getVerificationColor(currentResult.verification.cutPlankCountMatch)}>
-                        {getVerificationIcon(currentResult.verification.cutPlankCountMatch)}
+                      <span>
+                        Expected:{" "}
+                        {currentResult.scenario.expectedMetrics.cutPlanks}
+                      </span>
+                      <span
+                        className={getVerificationColor(
+                          currentResult.verification.cutPlankCountMatch,
+                        )}
+                      >
+                        {getVerificationIcon(
+                          currentResult.verification.cutPlankCountMatch,
+                        )}
                       </span>
                     </div>
-                    <div className="font-medium">Actual: {currentResult.actualMetrics.cutPlanks}</div>
+                    <div className="font-medium">
+                      Actual: {currentResult.actualMetrics.cutPlanks}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-2 text-xs text-gray-600">
-                  Full Planks: {currentResult.actualMetrics.fullPlanks} | 
+                  Full Planks: {currentResult.actualMetrics.fullPlanks} |
                   Spares: {currentResult.actualMetrics.spareCount}
                 </div>
               </div>
 
               {/* Coverage */}
               <div className="border rounded p-2 bg-gray-50">
-                <h5 className="font-medium text-gray-700 mb-2">Coverage Analysis</h5>
+                <h5 className="font-medium text-gray-700 mb-2">
+                  Coverage Analysis
+                </h5>
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between items-center">
-                    <span>Expected Coverage: {currentResult.scenario.expectedMetrics.coveragePercentage}%</span>
-                    <span className={getVerificationColor(currentResult.verification.coverageMatch)}>
-                      {getVerificationIcon(currentResult.verification.coverageMatch)}
+                    <span>
+                      Expected Coverage:{" "}
+                      {
+                        currentResult.scenario.expectedMetrics
+                          .coveragePercentage
+                      }
+                      %
+                    </span>
+                    <span
+                      className={getVerificationColor(
+                        currentResult.verification.coverageMatch,
+                      )}
+                    >
+                      {getVerificationIcon(
+                        currentResult.verification.coverageMatch,
+                      )}
                     </span>
                   </div>
                   <div className="font-medium">
-                    Actual Coverage: {formatNumber(currentResult.actualMetrics.coveragePercentage, 1)}%
+                    Actual Coverage:{" "}
+                    {formatNumber(
+                      currentResult.actualMetrics.coveragePercentage,
+                      1,
+                    )}
+                    %
                   </div>
                   <div className="text-gray-600 mt-1">
-                    Polygon Area: {formatNumber(currentResult.actualMetrics.polygonAreaMm2 / 1000000, 2)} m²
+                    Polygon Area:{" "}
+                    {formatNumber(
+                      currentResult.actualMetrics.polygonAreaMm2 / 1000000,
+                      2,
+                    )}{" "}
+                    m²
                   </div>
                   <div className="text-gray-600">
-                    Covered Area: {formatNumber(currentResult.actualMetrics.coveredAreaMm2 / 1000000, 2)} m²
+                    Covered Area:{" "}
+                    {formatNumber(
+                      currentResult.actualMetrics.coveredAreaMm2 / 1000000,
+                      2,
+                    )}{" "}
+                    m²
                   </div>
                 </div>
               </div>
 
               {/* Waste Analysis */}
               <div className="border rounded p-2 bg-gray-50">
-                <h5 className="font-medium text-gray-700 mb-2">Waste Analysis</h5>
+                <h5 className="font-medium text-gray-700 mb-2">
+                  Waste Analysis
+                </h5>
                 <div className="space-y-1 text-xs">
                   <div className="flex justify-between items-center">
-                    <span>Expected Waste: {formatNumber(currentResult.scenario.expectedMetrics.wastedAreaMm2 / 1000, 0)} cm²</span>
-                    <span className={getVerificationColor(currentResult.verification.wasteMatch)}>
-                      {getVerificationIcon(currentResult.verification.wasteMatch)}
+                    <span>
+                      Expected Waste:{" "}
+                      {formatNumber(
+                        currentResult.scenario.expectedMetrics.wastedAreaMm2 /
+                          1000,
+                        0,
+                      )}{" "}
+                      cm²
+                    </span>
+                    <span
+                      className={getVerificationColor(
+                        currentResult.verification.wasteMatch,
+                      )}
+                    >
+                      {getVerificationIcon(
+                        currentResult.verification.wasteMatch,
+                      )}
                     </span>
                   </div>
                   <div className="font-medium">
-                    Actual Waste: {formatNumber(currentResult.actualMetrics.wastedAreaMm2 / 1000, 0)} cm²
+                    Actual Waste:{" "}
+                    {formatNumber(
+                      currentResult.actualMetrics.wastedAreaMm2 / 1000,
+                      0,
+                    )}{" "}
+                    cm²
                   </div>
                   <div className="text-gray-600 mt-1">
-                    Waste Percentage: {formatNumber((currentResult.actualMetrics.wastedAreaMm2 / currentResult.actualMetrics.polygonAreaMm2) * 100, 1)}%
+                    Waste Percentage:{" "}
+                    {formatNumber(
+                      (currentResult.actualMetrics.wastedAreaMm2 /
+                        currentResult.actualMetrics.polygonAreaMm2) *
+                        100,
+                      1,
+                    )}
+                    %
                   </div>
                 </div>
               </div>
@@ -272,7 +360,10 @@ export default function TessellationTest() {
           <h4 className="font-semibold mb-2">Legend</h4>
           <div className="text-xs space-y-1">
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-amber-800 opacity-30 rounded-sm border border-amber-800" style={{borderStyle: "dashed"}}></div>
+              <div
+                className="w-3 h-3 bg-amber-800 opacity-30 rounded-sm border border-amber-800"
+                style={{ borderStyle: "dashed" }}
+              ></div>
               <span>First Plank (starting position)</span>
             </div>
             <div className="flex items-center gap-2">
@@ -362,13 +453,24 @@ export default function TessellationTest() {
                   Total: {currentResult.actualMetrics.totalPlanks} planks
                 </text>
                 <text x="20" y="57" fontSize="10" fill="#666">
-                  Cut: {currentResult.actualMetrics.cutPlanks} | Full: {currentResult.actualMetrics.fullPlanks}
+                  Cut: {currentResult.actualMetrics.cutPlanks} | Full:{" "}
+                  {currentResult.actualMetrics.fullPlanks}
                 </text>
                 <text x="20" y="69" fontSize="10" fill="#666">
-                  Coverage: {formatNumber(currentResult.actualMetrics.coveragePercentage, 1)}%
+                  Coverage:{" "}
+                  {formatNumber(
+                    currentResult.actualMetrics.coveragePercentage,
+                    1,
+                  )}
+                  %
                 </text>
                 <text x="20" y="81" fontSize="10" fill="#666">
-                  Waste: {formatNumber(currentResult.actualMetrics.wastedAreaMm2 / 1000, 0)} cm²
+                  Waste:{" "}
+                  {formatNumber(
+                    currentResult.actualMetrics.wastedAreaMm2 / 1000,
+                    0,
+                  )}{" "}
+                  cm²
                 </text>
               </g>
             )}
