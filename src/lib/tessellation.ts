@@ -419,7 +419,7 @@ const processRowsWithAwarePlacement = (
         offsetForThisRow,
         rotation,
       );
-      
+
       rowStates.set(rowIndex, {
         rowIndex,
         nextX: rowStartX,
@@ -430,7 +430,7 @@ const processRowsWithAwarePlacement = (
     }
 
     const rowState = rowStates.get(rowIndex)!;
-    
+
     // Skip if row is already completed
     if (rowState.completed) continue;
 
@@ -452,7 +452,7 @@ const processRowsWithAwarePlacement = (
       maxY,
     );
   }
-  
+
   return currentPlankId;
 };
 
@@ -478,7 +478,7 @@ const calculateRowStart = (
   const rad = (rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
-  
+
   return {
     rowStartX: startX + rowIndex * rowSpacingX + offsetForThisRow * cos,
     rowStartY: startY + rowIndex * rowSpacingY + offsetForThisRow * sin,
@@ -505,16 +505,16 @@ const processRowWithContinuousPlacement = (
   const maxAttempts = 20; // Prevent infinite loops
   let attempts = 0;
   let currentPlankId = plankId;
-  
+
   while (!rowState.completed && attempts < maxAttempts) {
     attempts++;
-    
+
     // Skip if we're trying to place at the first plank position
     if (rowState.rowIndex === 0 && rowState.placedPlanks.length === 0) {
       advanceRowPosition(rowState, lengthPx + gapPx, rotation);
       continue;
     }
-    
+
     // Check if we're outside reasonable bounds
     if (
       isOutsideBounds(
@@ -579,25 +579,29 @@ const processRowWithContinuousPlacement = (
 
     if (placed) {
       logger.trace(`✅ Successfully placed plank ${testPlank.id}`);
-      
+
       // Get the actual placed plank (might be modified by cutting)
       const actualPlank = newPlanks[newPlanks.length - 1];
       rowState.placedPlanks.push(actualPlank);
-      
+
       // Update next position based on actual plank dimensions
       const actualLengthPx = actualPlank.length * MM_TO_PIXELS;
       advanceRowPosition(rowState, actualLengthPx + gapPx, rotation);
     } else {
-      logger.trace(`🔴 Failed to place plank ${testPlank.id} - advancing position`);
+      logger.trace(
+        `🔴 Failed to place plank ${testPlank.id} - advancing position`,
+      );
       advanceRowPosition(rowState, lengthPx + gapPx, rotation);
     }
   }
-  
+
   if (attempts >= maxAttempts) {
-    logger.trace(`Row ${rowState.rowIndex} completed - reached maximum attempts`);
+    logger.trace(
+      `Row ${rowState.rowIndex} completed - reached maximum attempts`,
+    );
     rowState.completed = true;
   }
-  
+
   return currentPlankId;
 };
 
@@ -610,7 +614,7 @@ const advanceRowPosition = (
   const rad = (rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
-  
+
   rowState.nextX += advanceDistance * cos;
   rowState.nextY += advanceDistance * sin;
 };

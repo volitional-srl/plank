@@ -2,6 +2,11 @@ import type { Point } from "./geometry";
 import type { Plank } from "./plank";
 import { mmToPixels } from "./geometry";
 
+export const PLANK_FILL_RGB_SPARE = "rgba(34, 197, 94, 0.7)";
+export const PLANK_FILL_RGB_MULTILINE_CUT = "rgba(236, 72, 153, 0.7)";
+export const PLANK_FILL_RGB_REGULAR_CUT = "rgba(147, 51, 234, 0.7)";
+export const PLANK_FILL_RGB_LINEAR_CUT = "rgba(251, 146, 60, 0.7)";
+export const PLANK_FILL_RGB_FULL = "rgba(139, 69, 19, 0.7)";
 export interface PlankRenderInfo {
   isSpare: boolean;
   isCut: boolean;
@@ -13,8 +18,11 @@ export interface PlankRenderInfo {
 
 // Analyze plank properties for rendering
 export const analyzePlankForRendering = (plank: Plank): PlankRenderInfo => {
+  console.log(plank);
   const isSpare = plank.isSpare || false;
-  const isCut = plank.originalLength ? plank.length < plank.originalLength : false;
+  const isCut = plank.originalLength
+    ? plank.length < plank.originalLength
+    : false;
   const isArbitraryShape = plank.isArbitraryShape && plank.shape ? true : false;
   const isMultiLineCut = plank.isMultiLineCut || false;
 
@@ -22,21 +30,21 @@ export const analyzePlankForRendering = (plank: Plank): PlankRenderInfo => {
   let strokeColor: string;
 
   if (isSpare) {
-    fillColor = "rgba(34, 197, 94, 0.7)"; // Green
+    fillColor = PLANK_FILL_RGB_SPARE; // Green
     strokeColor = "#22C55E";
   } else if (isArbitraryShape) {
     if (isMultiLineCut) {
-      fillColor = "rgba(236, 72, 153, 0.7)"; // Pink for multi-line cuts
+      fillColor = PLANK_FILL_RGB_MULTILINE_CUT; // Pink for multi-line cuts
       strokeColor = "#EC4899";
     } else {
-      fillColor = "rgba(147, 51, 234, 0.7)"; // Purple for regular shape cuts
+      fillColor = PLANK_FILL_RGB_REGULAR_CUT; // Purple for regular shape cuts
       strokeColor = "#8B5CF6";
     }
   } else if (isCut) {
-    fillColor = "rgba(251, 146, 60, 0.7)"; // Orange for linear cuts
+    fillColor = PLANK_FILL_RGB_LINEAR_CUT; // Orange for linear cuts
     strokeColor = "#F97316";
   } else {
-    fillColor = "rgba(139, 69, 19, 0.7)"; // Brown for full planks
+    fillColor = PLANK_FILL_RGB_FULL; // Brown for full planks
     strokeColor = "#8B4513";
   }
 
@@ -66,11 +74,13 @@ export const plankShapeToWorldCoordinates = (plank: Plank): Point[] => {
 
 // Generate SVG path data from points
 export const pointsToSVGPath = (points: Point[]): string => {
-  return points
-    .map((point, index) =>
-      index === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`
-    )
-    .join(" ") + " Z";
+  return (
+    points
+      .map((point, index) =>
+        index === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`,
+      )
+      .join(" ") + " Z"
+  );
 };
 
 // Get plank rectangle dimensions in pixels

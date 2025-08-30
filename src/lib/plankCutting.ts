@@ -95,9 +95,7 @@ export const tryLinearCut = (
   logger.trace("📏 Length threshold (95%):", lengthPx * 0.95);
 
   if (!intersectionDistance || intersectionDistance >= lengthPx * 0.95) {
-    logger.debug(
-      "❌ Linear cut failed: No intersection or distance too large",
-    );
+    logger.debug("❌ Linear cut failed: No intersection or distance too large");
     return null;
   }
 
@@ -201,6 +199,7 @@ export const tryLinearCut = (
       length: negativeCutLengthMm,
       x: negativeTestPlank.x,
       y: negativeTestPlank.y,
+      originalLength: plank.originalLength || plank.length,
     };
 
     const spareLength = plank.length - negativeCutLengthMm;
@@ -261,6 +260,7 @@ export const tryLinearCut = (
       length: positiveCutLengthMm,
       x: positiveTestPlank.x,
       y: positiveTestPlank.y,
+      originalLength: plank.originalLength || plank.length,
     };
 
     const spareLength = plank.length - positiveCutLengthMm;

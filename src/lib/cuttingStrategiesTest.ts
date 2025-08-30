@@ -9,6 +9,14 @@ import {
   createSpareFromCut,
 } from "./plankCutting";
 
+export enum TestScenarioName {
+  LINEAR_CUT_RIGHT_EDGE = "Linear Cut Right Edge",
+  LINEAR_CUT_LEFT_EDGE = "Linear Cut Left Edge",
+  MULTI_LINE_CUT_L_SHAPED_ROOM = "Multi-line Cut - L-shaped room",
+  MULTI_LINE_CUT_H_SHAPED_ROOM = "Multi-line Cut - H-shaped room",
+  NO_CUT_POSSIBLE_OUTSIDE = "No Cut Possible - Plank completely outside",
+}
+
 export interface TestScenario {
   name: string;
   polygon: Point[];
@@ -296,7 +304,7 @@ export const attemptCuttingStrategies = (
 // Test scenarios for different cutting situations
 export const createTestScenarios = (): TestScenario[] => [
   {
-    name: "Linear Cut - Rectangular room",
+    name: TestScenarioName.LINEAR_CUT_RIGHT_EDGE,
     polygon: [
       { x: 100, y: 100 },
       { x: 350, y: 100 },
@@ -328,7 +336,7 @@ export const createTestScenarios = (): TestScenario[] => [
     },
   },
   {
-    name: "Linear Cut - Rectangular room (left edge)",
+    name: TestScenarioName.LINEAR_CUT_LEFT_EDGE,
     polygon: [
       { x: 100, y: 100 },
       { x: 350, y: 100 },
@@ -360,7 +368,7 @@ export const createTestScenarios = (): TestScenario[] => [
     },
   },
   {
-    name: "Shape Cut - L-shaped room",
+    name: TestScenarioName.MULTI_LINE_CUT_L_SHAPED_ROOM,
     polygon: [
       { x: 100, y: 100 },
       { x: 250, y: 100 },
@@ -400,7 +408,7 @@ export const createTestScenarios = (): TestScenario[] => [
     },
   },
   {
-    name: "Multi-line Cut - H-shaped room",
+    name: TestScenarioName.MULTI_LINE_CUT_H_SHAPED_ROOM,
     polygon: [
       // Left vertical bar of H
       { x: 100, y: 100 },
@@ -455,7 +463,7 @@ export const createTestScenarios = (): TestScenario[] => [
     },
   },
   {
-    name: "No Cut Possible - Plank completely outside",
+    name: TestScenarioName.NO_CUT_POSSIBLE_OUTSIDE,
     polygon: [
       { x: 100, y: 100 },
       { x: 200, y: 100 },

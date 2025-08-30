@@ -11,10 +11,14 @@ const MM_TO_PIXELS = 1 / 10;
 
 export interface Plank {
   id: string;
+  /** X-coordinate of the plank's center in pixels */
   x: number;
+  /** Y-coordinate of the plank's center in pixels */
   y: number;
   rotation: number;
+  /** Length of the plank in millimeters */
   length: number;
+  /** Width of the plank in millimeters */
   width: number;
   isSpare?: boolean;
   originalLength?: number;
